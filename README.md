@@ -1,4 +1,6 @@
-# Pocket Control
+<p align="center"><img src="assets/icon.png" alt="Pocket Control icon" width="128" height="128"></p>
+
+<h1 align="center">Pocket Control</h1>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-db61a2?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/rifqi2320)
