@@ -1,13 +1,14 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Crypto from "expo-crypto";
 import { fetch as expoFetch } from "expo/fetch";
+import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { AppState, Platform } from "react-native";
 import { authHeaders, classifyFetchError } from "./client";
 import type { PocketCore } from "./core";
 import { fetchApi } from "./http";
-import { CHANNEL_ATTENTION, CHANNEL_UPDATES, NOTIFICATIONS_KEY, POCKET_PROTOCOL_VERSION, availablePreferences, deriveStatus, extractPushPayload, normalizePreferences, normalizeStore, parsePocketInfo, parseTestResult, pushTarget, rpcErrorType, rpcPath, shouldPresentForeground, unwrapRpcResult } from "./notificationLogic";
-import type { NotificationPreferences, NotificationPrefKey, NotificationStatus, NotificationStore, PluginProbe, PushTarget, ServerNotificationRecord } from "./notificationLogic";
+import { CHANNEL_ATTENTION, CHANNEL_UPDATES, NOTIFICATIONS_KEY, POCKET_PROTOCOL_VERSION, availablePreferences, deriveStatus, extractPushPayload, normalizePreferences, normalizeStore, parsePocketInfo, parseTestResult, pushTarget, pushTransport, rpcErrorType, rpcPath, shouldPresentForeground, unwrapRpcResult } from "./notificationLogic";
+import type { NotificationPreferences, NotificationPrefKey, NotificationStatus, NotificationStore, PluginProbe, PushTarget, PushTransport, ServerNotificationRecord } from "./notificationLogic";
 
 const rpcTimeoutMs = 15_000;
 type Listener = () => void;
@@ -68,7 +69,8 @@ export class PocketNotifications {
   private connected = new Map<string, boolean>();
   private listeners = new Set<Listener>();
   private permission: "granted" | "denied" | "undetermined" | undefined;
-  private token: string | undefined;
+  /** Cached push tokens per transport; both change when Firebase rotates the device token. */
+  private tokens: Partial<Record<PushTransport, string>> = {};
   private viewingKey: string | undefined;
   private startPromise?: Promise<void>;
   private snapshot: NotificationsSnapshot = { supported: Platform.OS === "android", platform: Platform.OS, servers: {} };
@@ -156,8 +158,8 @@ export class PocketNotifications {
       });
       Notifications.addPushTokenListener(token => {
         const next = typeof token.data === "string" ? token.data : undefined;
-        if (!next || next === this.token) return;
-        this.token = next; void this.registerAllEnabled();
+        if (!next || next === this.tokens.fcm) return;
+        this.tokens = { fcm: next }; void this.registerAllEnabled();
       });
       await Promise.all([
         Notifications.setNotificationChannelAsync(CHANNEL_ATTENTION, { name: "Needs you", importance: Notifications.AndroidImportance.HIGH }),
@@ -216,14 +218,23 @@ export class PocketNotifications {
   }
   private async register(serverId: string, record: ServerNotificationRecord) {
     const target = await this.target(serverId); if (!target) throw new Error("Server profile not found");
-    const fcmToken = await this.pushToken();
+    const probe = this.probes.get(serverId);
+    const fcmToken = await this.pushToken(pushTransport(probe?.state === "ok" ? probe.info : undefined));
+    // The wire field is still called fcmToken; the plugin routes by token format (Expo vs raw FCM).
     await callPocketRpc(target, "upsertDevice", { deviceId: this.store.deviceId, fcmToken, platform: "android", pairingId: record.pairingId, preferences: record.preferences });
   }
-  private async pushToken() {
-    if (this.token) return this.token;
+  private async pushToken(transport: PushTransport) {
+    const cached = this.tokens[transport]; if (cached) return cached;
+    if (transport === "expo") {
+      const projectId = (Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined)?.eas?.projectId ?? Constants.easConfig?.projectId;
+      if (!projectId) throw new Error("This app build has no Expo project id, so it can't get an Expo push token");
+      const token = await Notifications.getExpoPushTokenAsync({ projectId });
+      if (typeof token.data !== "string" || !token.data) throw new Error("Could not get a push token from Expo");
+      return this.tokens.expo = token.data;
+    }
     const token = await Notifications.getDevicePushTokenAsync();
     if (typeof token.data !== "string" || !token.data) throw new Error("Could not get a push token from Firebase");
-    this.token = token.data; return this.token;
+    return this.tokens.fcm = token.data;
   }
   private async forget(serverId: string, target: RpcTarget) {
     await this.start();

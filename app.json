@@ -2,6 +2,7 @@
   "expo": {
     "name": "Pocket Control",
     "slug": "pocket-control",
+    "owner": "reefz23",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -35,6 +36,11 @@
           "defaultChannel": "pocket-attention"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "19fe215a-5a10-47f4-abb5-0aaefb9c8238"
+      }
+    }
   }
 }

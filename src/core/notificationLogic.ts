@@ -14,7 +14,13 @@ export const PREFERENCE_KEYS: readonly NotificationPrefKey[] = ["needsPermission
 export type ServerNotificationRecord = { pairingId: string; enabled: boolean; preferences: NotificationPreferences };
 export type NotificationStore = { deviceId?: string; servers: Record<string, ServerNotificationRecord> };
 /** `events`/`subagents` come from plugin 0.2.0+ (its server options); older plugins omit them. */
-export type PocketInfo = { protocolVersion: number; pluginVersion?: string; notificationsConfigured: boolean; events?: string[]; subagents?: boolean };
+export type PocketInfo = { protocolVersion: number; pluginVersion?: string; notificationsConfigured: boolean; events?: string[]; subagents?: boolean; transports?: string[] };
+/** How this device's token reaches it: through the Expo Push Service, or direct FCM with the server's own Firebase key. */
+export type PushTransport = "expo" | "fcm";
+/** Plugin 0.3.0+ advertises `transports`; Expo is preferred because it needs no credentials on the server. Older plugins are FCM only. */
+export function pushTransport(info?: PocketInfo): PushTransport {
+  return info?.transports?.includes("expo") ? "expo" : "fcm";
+}
 /** Result of the last `info()` probe for a server. */
 export type PluginProbe = { state: "unknown" } | { state: "checking" } | { state: "missing" } | { state: "unreachable"; message: string } | { state: "error"; message: string } | { state: "ok"; info: PocketInfo };
 export type PushKind = "permission" | "question" | "failed" | "finished" | "interrupted" | "test";
@@ -68,9 +74,10 @@ export function parsePocketInfo(value: unknown): PocketInfo | undefined {
   const info = value as Record<string, unknown>;
   const protocolVersion = typeof info.protocolVersion === "number" ? info.protocolVersion : Number(info.protocolVersion);
   if (!Number.isFinite(protocolVersion)) return undefined;
-  const events = Array.isArray(info.events) ? info.events.filter((kind): kind is string => typeof kind === "string") : undefined;
+  const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : undefined;
+  const events = strings(info.events); const transports = strings(info.transports);
   return { protocolVersion, ...(typeof info.pluginVersion === "string" ? { pluginVersion: info.pluginVersion } : {}), notificationsConfigured: info.notificationsConfigured === true,
-    ...(events ? { events } : {}), ...(typeof info.subagents === "boolean" ? { subagents: info.subagents } : {}) };
+    ...(events ? { events } : {}), ...(typeof info.subagents === "boolean" ? { subagents: info.subagents } : {}), ...(transports ? { transports } : {}) };
 }
 export function parseTestResult(value: unknown): { ok: boolean; error?: string } {
   if (!value || typeof value !== "object") return { ok: false, error: "Unexpected response from the plugin" };
@@ -97,7 +104,7 @@ export function deriveStatus(input: { platform: string; probe: PluginProbe; reco
   if (probe.info.protocolVersion !== POCKET_PROTOCOL_VERSION) return { kind: "plugin-unsupported", label: `Plugin protocol ${probe.info.protocolVersion} is not supported by this app`, tone: "warning", canToggle: enabled };
   if (enabled && input.permission === "denied") return { kind: "blocked", label: "Blocked in Android settings", tone: "warning", canToggle: true };
   if (enabled && input.lastError) return { kind: "error", label: input.lastError, tone: "danger", canToggle: true };
-  if (!probe.info.notificationsConfigured) return { kind: "not-configured", label: "Plugin installed · server has no Firebase credentials", tone: "warning", canToggle: true };
+  if (!probe.info.notificationsConfigured) return { kind: "not-configured", label: "Plugin installed · push is turned off on the server", tone: "warning", canToggle: true };
   return enabled ? { kind: "on", label: "On", tone: "success", canToggle: true } : { kind: "off", label: "Off", tone: "neutral", canToggle: true };
 }
 

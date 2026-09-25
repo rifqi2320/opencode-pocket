@@ -21,7 +21,7 @@ It only shows live data. Until a server connection succeeds, the home screen is 
 - **Start sessions from the phone.** Tap **+** in the header, or the **+** next to a project in the project view. Enter a folder name the server already knows, or an absolute path. If the folder doesn't exist on the server, the app shows an error instead of creating the session.
 - **Honest states.** Offline, auth failure, version mismatch and partial data each have their own UI. A prompt shows as acknowledged by the server, not as finished.
 - **Forms.** Answer OpenCode questions and permission requests from the phone. If this build can't render a form, the app sends you to the OpenCode client instead of guessing an answer.
-- **Push notifications (Android).** Optional. Needs the companion [OpenCode plugin](plugin/README.md), which sends through Firebase Cloud Messaging. You choose on the phone which events notify you. The plugin's options decide which events a server offers at all.
+- **Push notifications (Android).** Optional. Needs the companion [OpenCode plugin](plugin/README.md), which works with no setup: it sends through the Expo Push Service, so you don't need a Firebase project or any keys. You choose on the phone which events notify you. The plugin's options decide which events a server offers at all.
 - **Light and dark mode.** Follows the system setting.
 
 ## Repository layout
@@ -56,15 +56,17 @@ npm run check      # typecheck + static web export
 cd plugin && npm test
 ```
 
-### Android build and Firebase
+### Android build
 
-Push needs a Firebase project. `google-services.json` is gitignored, so each build supplies its own:
+```sh
+npx expo prebuild --clean
+npm run android                                  # local debug build
+npx eas-cli build -p android --profile preview   # installable APK built by EAS
+```
 
-1. In the Firebase console, add an Android app with package `app.pocketcontrol.mobile`.
-2. Download `google-services.json` into the repository root. `app.json` already points to it.
-3. Run `npx expo prebuild --clean` and then `npm run android`.
+The repo ships the project's `google-services.json` (the Firebase client config every Android app embeds; it isn't a secret) and the Expo project id in `app.json`, so builds get working push out of the box.
 
-Never commit Firebase **service-account / admin SDK** keys. Only the OpenCode host running the plugin needs one. See [plugin credentials](plugin/README.md#credentials).
+**Forks that publish their own app** need their own Firebase project (replace `google-services.json` and keep the package name in sync), their own Expo project (`eas init`), and must upload an FCM V1 service-account key to Expo (`eas credentials -p android` → Google Service Account → FCM V1). Use a service account with only the *Firebase Cloud Messaging API Admin* role, and never commit it.
 
 ## Connecting a server
 
@@ -88,7 +90,8 @@ Before creating anything, the app asks the server whether the folder exists (`GE
 ## Notifications (Android)
 
 1. Install the [Pocket plugin](plugin/README.md) on the OpenCode server. Without it, everything else still works and the server row shows **Plugin not installed**.
-2. In **Servers → (server)**, turn on **Notifications**. The app asks for notification permission and registers this device's FCM token at `POST {server}/api/rpc/pocket/upsertDevice`, using the same URL and password as other requests.
+2. In **Servers → (server)**, turn on **Notifications**. The app asks for notification permission and registers this device's push token at `POST {server}/api/rpc/pocket/upsertDevice`, using the same URL and password as other requests. It uses an Expo push token with plugin 0.3.0+, and a raw FCM token with older plugins (which need their own Firebase credentials).
+   - Only the servers you turn this on for get the token, so only they can push to this phone.
 3. Choose which events notify you: permission requests, questions, failures, finished sessions, interrupted sessions, and whether subagents count for the last three. You can also hide details on the lock screen or tap **Send test**. The phone only shows toggles for events the server's plugin offers (see [plugin options](plugin/README.md#options)); plugin 0.1.x servers show the original four.
 
 A push only tells the app to look. Tapping one refreshes from live OpenCode state and opens the session. The payload carries an opaque `pairingId`, never the server URL. There are two channels: `pocket-attention` (high priority) and `pocket-updates`. iOS push (APNs) and web push are not supported yet.

@@ -19,7 +19,7 @@ npm install
 npm run web        # quickest loop; UI previews at http://localhost:8081/#preview/sessions
 ```
 
-Push notifications need your own Firebase project. See [Android build and Firebase](README.md#android-build-and-firebase) and [plugin/README.md](plugin/README.md).
+Push notifications work out of the box with the committed Firebase client config and Expo project. See [Android build](README.md#android-build) and [plugin/README.md](plugin/README.md).
 
 To try plugin changes, point your OpenCode config at your checkout (`"package": "/abs/path/to/opencode-pocket/plugin"`). OpenCode hot-reloads the plugin when its files change.
 
@@ -42,7 +42,7 @@ For UI changes, include a screenshot from the web preview (`#preview/sessions`, 
 - **Match the surrounding code.** Follow the existing naming, file layout, comment density and idioms.
 - **Keep the boundaries:** `src/core/**` owns networking, persistence and mutations. `src/ui/**` renders view projections (`src/ui/types.ts`) and never calls the OpenCode API directly. `App.tsx` adapts one to the other.
 - **Show only real state.** The app never fabricates or guesses server state. When something is unknown, stale or unsupported, say so in the UI.
-- **Secrets stay out of logs, URLs and storage other than SecureStore.** Never commit `google-services.json`, service-account keys or APKs; they're gitignored.
+- **Secrets stay out of logs, URLs and storage other than SecureStore.** Never commit service-account keys or APKs; they're gitignored. (`google-services.json` is public client config and is committed on purpose.)
 - **The plugin is observational.** It must never block, delay or change agent work, and it must stay free of runtime dependencies.
 - **Plugin protocol changes must stay backward compatible** with already-installed apps and plugins. Add optional fields rather than changing required ones, and bump `plugin/package.json`'s version.
 

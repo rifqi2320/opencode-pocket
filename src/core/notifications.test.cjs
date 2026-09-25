@@ -110,3 +110,11 @@ test("availablePreferences follows the plugin's events option; older plugins kee
   assert.deepEqual(L.parsePocketInfo({ protocolVersion: 1, notificationsConfigured: true, events: ["failed", 3], subagents: false }), { protocolVersion: 1, notificationsConfigured: true, events: ["failed"], subagents: false });
   assert.equal(L.parsePushData({ pocket: "1", pairingId: "p", kind: "interrupted", sessionId: "s" }).kind, "interrupted");
 });
+
+test("pushTransport prefers Expo when the plugin offers it; older plugins are FCM only", () => {
+  assert.equal(L.pushTransport(undefined), "fcm");
+  assert.equal(L.pushTransport({ protocolVersion: 1, notificationsConfigured: true }), "fcm");
+  assert.equal(L.pushTransport({ protocolVersion: 1, notificationsConfigured: true, transports: ["fcm"] }), "fcm");
+  assert.equal(L.pushTransport({ protocolVersion: 1, notificationsConfigured: true, transports: ["expo", "fcm"] }), "expo");
+  assert.deepEqual(L.parsePocketInfo({ protocolVersion: 1, notificationsConfigured: true, transports: ["expo", 1] }).transports, ["expo"]);
+});

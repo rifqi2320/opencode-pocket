@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "201208398558",
+    "project_id": "opencode-pocket",
+    "storage_bucket": "opencode-pocket.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:201208398558:android:74e8229e12e68cdc13f84f",
+        "android_client_info": {
+          "package_name": "app.pocketcontrol.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAWXXIFFDy9xeDH1ELOKwZTXoLXZcjvliU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
