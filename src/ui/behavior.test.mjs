@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { actionableRequests, canConfirmSavedServerRemoval, groupSessionSections } from './behavior.ts';
+import { actionableRequests, canConfirmSavedServerRemoval, groupSessionsByProject, groupSessionSections } from './behavior.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const makeSession = (id, overrides = {}) => ({
@@ -75,4 +75,21 @@ test('text tokens clear WCAG AA on every surface in both palettes', async () => 
     }
     assert.ok(contrast(token('accentText'), token('accent')) >= 4.5, `${name}: primary button label`);
   }
+});
+
+test('project view groups root sessions per server and folder, keeping urgency order', () => {
+  const permission = { id: 'p1', kind: 'permission', label: 'Allow write' };
+  const sessions = [
+    makeSession('needs', { serverId: 's1', directory: '/code/api', project: 'api', attention: [permission] }),
+    makeSession('web', { serverId: 's1', directory: '/code/web', project: 'web', status: 'running' }),
+    makeSession('api-old', { serverId: 's1', directory: '/code/api', project: 'api' }),
+    makeSession('other-server', { serverId: 's2', server: 'Lab', directory: '/code/api', project: 'api' }),
+    makeSession('worker', { serverId: 's1', directory: '/code/api', project: 'api', isWorker: true }),
+  ];
+  const groups = groupSessionsByProject(sessions, 'all');
+  assert.deepEqual(groups.map(group => [group.serverId, group.directory, group.sessions.map(item => item.id)]), [
+    ['s1', '/code/api', ['needs', 'api-old']], ['s1', '/code/web', ['web']], ['s2', '/code/api', ['other-server']],
+  ]);
+  assert.deepEqual(groupSessionsByProject(sessions, 'needs').map(group => group.sessions.map(item => item.id)), [['needs']]);
+  assert.deepEqual(groupSessionsByProject(sessions, 'working').map(group => group.project), ['web']);
 });

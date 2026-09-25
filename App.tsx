@@ -4,11 +4,13 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { fetch as expoFetch } from 'expo/fetch';
 import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePocket as useCorePocket, type PushTarget } from './src/core';
 import { authHeaders } from './src/core/client';
+import { LOCATION_QUERY_KEY } from './src/core/http';
 import { classifyRelationship, executionStatus, familyActivity, rollupFamilyRows, sessionFreshness } from './src/core/status';
 import type { PendingForm, PendingPermission, ServerSnapshot, SessionMessage, SessionRecord, SessionSnapshot } from './src/core/types';
-import { SessionsScreen } from './src/ui/SessionsScreen';
+import { SessionsScreen, type SessionView } from './src/ui/SessionsScreen';
 import { SessionDetailScreen } from './src/ui/SessionDetailScreen';
 import { ServersScreen } from './src/ui/ServersScreen';
 import { makeStyles, type as typeScale, usePalette } from './src/ui/theme';
@@ -21,6 +23,7 @@ import { buildTurns } from './src/ui/turns';
 
 type Route = { screen: 'sessions' | 'servers' } | { screen: 'detail'; key: string };
 type AppSession = PocketSession & { serverId: string; remoteId: string };
+const SESSION_VIEW_KEY = 'pocket.ui.sessionView.v1';
 
 /** The UI consumes a small view projection; the core remains the owner of live state and mutations. */
 export function usePocket() {
@@ -52,6 +55,16 @@ function Shell() {
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchedFor, setSearchedFor] = useState('');
+  const [sessionView, setSessionView] = useState<SessionView>('status');
+  useEffect(() => { void AsyncStorage.getItem(SESSION_VIEW_KEY).then(value => { if (value === 'project' || value === 'status') setSessionView(value); }).catch(() => undefined); }, []);
+  const changeSessionView = (next: SessionView) => { setSessionView(next); void AsyncStorage.setItem(SESSION_VIEW_KEY, next).catch(() => undefined); };
+  const createSession = async (serverId: string, folder: string, title?: string) => {
+    const sessionId = await pocket.createSession(serverId, folder, title);
+    // The projected list catches up on the next emit; route by key like a notification tap does.
+    setQuery('');
+    setRoute({ screen: 'detail', key: `${serverId}\u0000${sessionId}` });
+    void pocket.selectSession(serverId, sessionId).catch(() => undefined);
+  };
   useEffect(() => {
     const text = query.trim();
     if (!text) { setSearching(false); setSearchedFor(''); return; }
@@ -160,7 +173,8 @@ function Shell() {
     <StatusBar style={c.scheme === 'dark' ? 'light' : 'dark'} />
     <View style={s.fill}>
       {route.screen === 'sessions' ? <SessionsScreen sessions={pocket.sessions} servers={pocket.servers} onOpen={openSession} onServers={() => setRoute({ screen: 'servers' })} onRefresh={() => void pocket.refresh().catch(() => undefined)} refreshing={pocket.servers.some(server => server.state === 'connecting')}
-        query={query} onQuery={setQuery} searching={searching} {...(searchedFor ? { results: pocket.searched } : {})} /> : null}
+        query={query} onQuery={setQuery} searching={searching} {...(searchedFor ? { results: pocket.searched } : {})}
+        view={sessionView} onViewChange={changeSessionView} onCreateSession={createSession} knownDirectories={pocket.knownDirectories} /> : null}
       {route.screen === 'servers' ? <ServersScreen servers={pocket.servers} onSave={saveServer} onUpdate={updateServer} onTest={testServer} busyId={busyId} onRemove={id => pocket.removeServer(id)}
         notifications={pocket.notifications}
         onNotificationsToggle={(id, on) => on ? pocket.enableNotifications(id) : pocket.disableNotifications(id)}
@@ -265,7 +279,7 @@ function projectSessions(serverSnapshots: ServerSnapshot[], sessionSnapshots: Se
         rolledUpAttention.push({ id: row.id, ownerSessionKey: `${server.profile.id}\u0000${ownerSessionId}`, kind: 'form', label: `${child ? sessionTitle(child) : 'Worker'} · ${formLabel(row)}` });
       }
       const familyCoverage = server.coverage.sessions === 'complete' && server.coverage.blockers === 'complete' && activeFresh ? 'complete' : server.coverage.sessions === 'unknown' || !server.activeSessionIds.data ? 'unknown' : 'partial';
-       result.push({ id, serverId: server.profile.id, remoteId: record.id, server: server.profile.name, project: directoryName(record.directory), title: sessionTitle(record), status, isWorker, ...(failure ? { failure } : {}),
+       result.push({ id, serverId: server.profile.id, remoteId: record.id, server: server.profile.name, project: directoryName(record.directory), ...(record.directory ? { directory: record.directory } : {}), title: sessionTitle(record), status, isWorker, ...(failure ? { failure } : {}),
         familyStatus: family.status, activeWorkerCount: family.activeWorkerCount, familyCoverage,
         summary: status === 'running' ? 'Session is active' : status === 'inactive' ? 'No active execution observed' : 'Execution status not confirmed',
         lastSeen: server.activeSessionIds.observedAt ? relative(server.activeSessionIds.observedAt) : 'not observed', freshness, attention, forms: formRequests, rolledUpAttention, workers: workerRows, messages, ...(detail?.messageCursor ? { hasEarlier: true } : {}),
@@ -302,7 +316,7 @@ async function readFormDetail(pocket: ReturnType<typeof usePocket>, serverId: st
   if (!profile) throw new Error('The form’s server profile is unavailable. No answer was sent.');
   const password = await pocket.core.getPassword(serverId);
   const directory = pocket.core.getSession(serverId, sessionId)?.metadata.data?.directory;
-  const query = new URLSearchParams(); if (directory) query.set('directory', directory);
+  const query = new URLSearchParams(); if (directory) query.set(LOCATION_QUERY_KEY, directory);
   const path = `/api/session/${encodeURIComponent(sessionId)}/form/${encodeURIComponent(formId)}`;
   const response = await expoFetch(`${profile.url}${path}${query.size ? `?${query}` : ''}`, { method: 'GET', headers: { ...authHeaders(password), accept: 'application/json' }, redirect: 'error' } as RequestInit);
   if (!response.ok) throw new Error(`Could not verify this form’s current state (${response.status}); no answer was sent.`);

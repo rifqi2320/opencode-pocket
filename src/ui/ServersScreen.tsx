@@ -164,7 +164,7 @@ export function ServersScreen({ servers, onBack, onSave, onUpdate, onRemove, onT
   </ScrollView>;
 }
 
-const PREFS: ReadonlyArray<readonly [NotificationPrefKey, string]> = [['needsPermission', 'Permission requests'], ['needsAnswer', 'Questions'], ['sessionFailed', 'Failures'], ['sessionFinished', 'Finished sessions'], ['hideDetails', 'Hide details on lock screen']];
+const PREFS: ReadonlyArray<readonly [NotificationPrefKey, string]> = [['needsPermission', 'Permission requests'], ['needsAnswer', 'Questions'], ['sessionFailed', 'Failures'], ['sessionFinished', 'Finished sessions'], ['sessionInterrupted', 'Interrupted sessions'], ['includeSubagents', 'Include subagents (finished, failed, interrupted)'], ['hideDetails', 'Hide details on lock screen']];
 
 function NotificationsBlock({ serverId, platform, value, onToggle, onPreference, onTest }: { serverId: string; platform: string; value?: PocketServerNotifications; onToggle?: Props['onNotificationsToggle']; onPreference?: Props['onNotificationPreference']; onTest?: Props['onNotificationTest'] }) {
   const c = usePalette(); const s = useStyles();
@@ -191,7 +191,7 @@ function NotificationsBlock({ serverId, platform, value, onToggle, onPreference,
     </View>
     {android && enabled ? <>
       <View style={s.prefs}>
-        {PREFS.map(([key, label]) => <View key={key} style={s.prefRow}>
+        {PREFS.filter(([key]) => !value?.available || value.available.includes(key)).map(([key, label]) => <View key={key} style={s.prefRow}>
           <Text style={s.prefLabel}>{label}</Text>
           <Toggle label={label} value={value?.preferences[key] === true} disabled={busy || !onPreference} onValueChange={next => void run(() => onPreference!(serverId, key, next), 'Could not save this preference.')} />
         </View>)}

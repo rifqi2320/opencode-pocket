@@ -25,7 +25,11 @@ export type PocketTurn =
 export type PocketSession = {
   id: string;
   server: string;
+  /** Server profile id; groups sessions per server when names collide. */
+  serverId?: string;
   project: string;
+  /** Absolute working directory reported by OpenCode (the project/folder the session runs in). */
+  directory?: string;
   title: string;
   status: 'running' | 'inactive' | 'unknown';
   /** Explicit server-reported failure evidence; never treated as a pending human decision. */
@@ -65,10 +69,12 @@ export type PocketServer = {
   error?: string;
 };
 /** Per-server push notification controls (see src/core/notifications.ts). */
-export type NotificationPrefKey = 'needsPermission' | 'needsAnswer' | 'sessionFailed' | 'sessionFinished' | 'hideDetails';
+export type NotificationPrefKey = 'needsPermission' | 'needsAnswer' | 'sessionFailed' | 'sessionFinished' | 'sessionInterrupted' | 'includeSubagents' | 'hideDetails';
 export type PocketServerNotifications = {
   enabled: boolean;
   busy: boolean;
   preferences: Record<NotificationPrefKey, boolean>;
+  /** Toggles the server's plugin supports, in display order; all when unknown. */
+  available?: NotificationPrefKey[];
   status: { kind: string; label: string; tone: 'neutral' | 'success' | 'warning' | 'danger'; canToggle: boolean };
 };

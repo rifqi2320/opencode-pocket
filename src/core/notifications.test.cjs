@@ -90,7 +90,7 @@ test("stored state normalizes with safe defaults", () => {
   assert.deepEqual(Object.keys(parsed.servers), ["a"]);
   assert.equal(parsed.servers.a.enabled, false);
   assert.deepEqual(parsed.servers.a.preferences, { ...L.DEFAULT_PREFERENCES, sessionFinished: true });
-  assert.deepEqual(L.DEFAULT_PREFERENCES, { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, hideDetails: false });
+  assert.deepEqual(L.DEFAULT_PREFERENCES, { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, sessionInterrupted: false, includeSubagents: false, hideDetails: false });
 });
 
 test("OpenCode RPC envelopes: {output} unwraps and RpcError types are recognised", async () => {
@@ -98,4 +98,15 @@ test("OpenCode RPC envelopes: {output} unwraps and RpcError types are recognised
   assert.deepEqual(unwrapRpcResult({ output: { ok: true } }), { ok: true });
   assert.equal(rpcErrorType({ _tag: "RpcError", type: "rpc.unavailable", message: "RPC is unavailable: pocket" }), "rpc.unavailable");
   assert.equal(rpcErrorType({ message: "x" }), undefined);
+});
+
+test("availablePreferences follows the plugin's events option; older plugins keep the original toggles", () => {
+  const legacy = ["needsPermission", "needsAnswer", "sessionFailed", "sessionFinished", "hideDetails"];
+  assert.deepEqual(L.availablePreferences(undefined), legacy);
+  assert.deepEqual(L.availablePreferences({ protocolVersion: 1, notificationsConfigured: true }), legacy);
+  assert.deepEqual(L.availablePreferences({ protocolVersion: 1, notificationsConfigured: true, events: ["permission", "question", "failed", "finished", "interrupted"], subagents: true }), L.PREFERENCE_KEYS);
+  assert.deepEqual(L.availablePreferences({ protocolVersion: 1, notificationsConfigured: true, events: ["permission", "finished"], subagents: false }), ["needsPermission", "sessionFinished", "hideDetails"]);
+  assert.deepEqual(L.availablePreferences({ protocolVersion: 1, notificationsConfigured: true, events: ["question"] }), ["needsAnswer", "hideDetails"]);
+  assert.deepEqual(L.parsePocketInfo({ protocolVersion: 1, notificationsConfigured: true, events: ["failed", 3], subagents: false }), { protocolVersion: 1, notificationsConfigured: true, events: ["failed"], subagents: false });
+  assert.equal(L.parsePushData({ pocket: "1", pairingId: "p", kind: "interrupted", sessionId: "s" }).kind, "interrupted");
 });

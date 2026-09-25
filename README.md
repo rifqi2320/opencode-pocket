@@ -15,9 +15,11 @@ It only shows live data. Until a server connection succeeds, the home screen is 
 
 - **Attention first.** Sessions waiting on a permission or a question sort above sessions that are just running.
 - **Multiple servers.** Each server keeps its own name and project in the list and in the detail view.
+- **Two list views.** Group sessions by status (what needs you, failed, working, recent) or by project folder. The toggle next to the filter switches views, and the app remembers your choice.
+- **Start sessions from the phone.** Tap **+** in the header, or the **+** next to a project in the project view. Enter a folder name the server already knows, or an absolute path. If the folder doesn't exist on the server, the app shows an error instead of creating the session.
 - **Honest states.** Offline, auth failure, version mismatch and partial data each have their own UI. A prompt shows as acknowledged by the server, not as finished.
 - **Forms.** Answer OpenCode questions and permission requests from the phone. If this build can't render a form, the app sends you to the OpenCode client instead of guessing an answer.
-- **Push notifications (Android).** Optional. Needs the companion [OpenCode plugin](plugin/README.md), which sends through Firebase Cloud Messaging.
+- **Push notifications (Android).** Optional. Needs the companion [OpenCode plugin](plugin/README.md), which sends through Firebase Cloud Messaging. You choose on the phone which events notify you. The plugin's options decide which events a server offers at all.
 - **Light and dark mode.** Follows the system setting.
 
 ## Repository layout
@@ -71,21 +73,31 @@ Open **Servers → +**, enter an HTTPS URL and the server password if one is set
 - Don't put credentials in the URL.
 - The phone must already be able to reach the server. Pocket Control does not set up servers or VPNs, does not bypass TLS, and does not follow redirects to another origin.
 
+## Starting a session
+
+**Sessions → +** (or the **+** beside a project in the project view) opens the new-session form. Pick the server, then enter a folder:
+
+- A **folder name** such as `my-api` works when exactly one folder with that name already has sessions on the server. The chips below the field list known folders.
+- An **absolute path** such as `/home/me/code/my-api` works for any existing folder on the server.
+- `~` paths and relative paths are rejected. The server can't expand `~`, and it would resolve relative paths against its own working directory.
+
+Before creating anything, the app asks the server whether the folder exists (`GET /api/location`). If it doesn't, you get an error and no session is created. On success, the new empty session opens so you can send the first prompt.
+
 ## Notifications (Android)
 
 1. Install the [Pocket plugin](plugin/README.md) on the OpenCode server. Without it, everything else still works and the server row shows **Plugin not installed**.
 2. In **Servers → (server)**, turn on **Notifications**. The app asks for notification permission and registers this device's FCM token at `POST {server}/api/rpc/pocket/upsertDevice`, using the same URL and password as other requests.
-3. Choose which events notify you (permission requests, questions, failures, finished sessions), hide details on the lock screen if you want, or tap **Send test**.
+3. Choose which events notify you: permission requests, questions, failures, finished sessions, interrupted sessions, and whether subagents count for the last three. You can also hide details on the lock screen or tap **Send test**. The phone only shows toggles for events the server's plugin offers (see [plugin options](plugin/README.md#options)); plugin 0.1.x servers show the original four.
 
 A push only tells the app to look. Tapping one refreshes from live OpenCode state and opens the session. The payload carries an opaque `pairingId`, never the server URL. There are two channels: `pocket-attention` (high priority) and `pocket-updates`. iOS push (APNs) and web push are not supported yet.
 
 ## UI preview
 
-In a web dev build, `http://localhost:8081/#preview/sessions` shows the screens with fixture data. The other previews are `#preview/detail`, `#preview/servers` and `#preview/empty`.
+In a web dev build, `http://localhost:8081/#preview/sessions` shows the screens with fixture data. The other previews are `#preview/projects`, `#preview/detail`, `#preview/servers` and `#preview/empty`.
 
 ## Contributing
 
-Issues and pull requests are welcome. Before you open a PR, run `npm run typecheck`, `npm test` and `cd plugin && npm test`.
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks and guidelines.
 
 ## Sponsor
 

@@ -5,15 +5,19 @@ export const POCKET_PROTOCOL_VERSION = 1;
 export const CHANNEL_ATTENTION = "pocket-attention";
 export const CHANNEL_UPDATES = "pocket-updates";
 
-export type NotificationPreferences = { needsPermission: boolean; needsAnswer: boolean; sessionFailed: boolean; sessionFinished: boolean; hideDetails: boolean };
-export const DEFAULT_PREFERENCES: NotificationPreferences = { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, hideDetails: false };
+export type NotificationPreferences = { needsPermission: boolean; needsAnswer: boolean; sessionFailed: boolean; sessionFinished: boolean; sessionInterrupted: boolean; includeSubagents: boolean; hideDetails: boolean };
+export type NotificationPrefKey = keyof NotificationPreferences;
+export const DEFAULT_PREFERENCES: NotificationPreferences = { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, sessionInterrupted: false, includeSubagents: false, hideDetails: false };
+/** Display order. `sessionInterrupted` and `includeSubagents` need plugin 0.2.0+. */
+export const PREFERENCE_KEYS: readonly NotificationPrefKey[] = ["needsPermission", "needsAnswer", "sessionFailed", "sessionFinished", "sessionInterrupted", "includeSubagents", "hideDetails"];
 /** Persisted per server profile. `enabled` stays false until the user turns notifications on. */
 export type ServerNotificationRecord = { pairingId: string; enabled: boolean; preferences: NotificationPreferences };
 export type NotificationStore = { deviceId?: string; servers: Record<string, ServerNotificationRecord> };
-export type PocketInfo = { protocolVersion: number; pluginVersion?: string; notificationsConfigured: boolean };
+/** `events`/`subagents` come from plugin 0.2.0+ (its server options); older plugins omit them. */
+export type PocketInfo = { protocolVersion: number; pluginVersion?: string; notificationsConfigured: boolean; events?: string[]; subagents?: boolean };
 /** Result of the last `info()` probe for a server. */
 export type PluginProbe = { state: "unknown" } | { state: "checking" } | { state: "missing" } | { state: "unreachable"; message: string } | { state: "error"; message: string } | { state: "ok"; info: PocketInfo };
-export type PushKind = "permission" | "question" | "failed" | "finished" | "test";
+export type PushKind = "permission" | "question" | "failed" | "finished" | "interrupted" | "test";
 export type PushData = { pairingId: string; kind: PushKind; sessionId?: string; eventId?: string };
 export type NotificationStatusKind = "unsupported" | "checking" | "plugin-missing" | "plugin-unsupported" | "not-configured" | "unreachable" | "blocked" | "off" | "on" | "error";
 export type NotificationStatus = { kind: NotificationStatusKind; label: string; tone: "neutral" | "success" | "warning" | "danger"; /** Whether the on/off control can be used. Turning off is always allowed. */ canToggle: boolean };
@@ -33,8 +37,18 @@ export function normalizeStore(raw: unknown): NotificationStore {
 }
 export function normalizePreferences(raw: unknown): NotificationPreferences {
   const value = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
-  const pick = (key: keyof NotificationPreferences) => typeof value[key] === "boolean" ? value[key] as boolean : DEFAULT_PREFERENCES[key];
-  return { needsPermission: pick("needsPermission"), needsAnswer: pick("needsAnswer"), sessionFailed: pick("sessionFailed"), sessionFinished: pick("sessionFinished"), hideDetails: pick("hideDetails") };
+  return Object.fromEntries(PREFERENCE_KEYS.map(key => [key, typeof value[key] === "boolean" ? value[key] as boolean : DEFAULT_PREFERENCES[key]])) as NotificationPreferences;
+}
+const LEGACY_PREFERENCES: readonly NotificationPrefKey[] = ["needsPermission", "needsAnswer", "sessionFailed", "sessionFinished", "hideDetails"];
+const PREFERENCE_FOR_EVENT: Record<string, NotificationPrefKey> = { permission: "needsPermission", question: "needsAnswer", failed: "sessionFailed", finished: "sessionFinished", interrupted: "sessionInterrupted" };
+/** Toggles worth showing for a server: only kinds its plugin pushes (plugin option `events`). Unknown/older plugins get the original set. */
+export function availablePreferences(info?: PocketInfo): NotificationPrefKey[] {
+  if (!info?.events) return [...LEGACY_PREFERENCES];
+  const kinds = new Set(info.events.map(kind => PREFERENCE_FOR_EVENT[kind]).filter((key): key is NotificationPrefKey => !!key));
+  const outcomes = kinds.has("sessionFailed") || kinds.has("sessionFinished") || kinds.has("sessionInterrupted");
+  if (info.subagents !== false && outcomes) kinds.add("includeSubagents");
+  kinds.add("hideDetails");
+  return PREFERENCE_KEYS.filter(key => kinds.has(key));
 }
 
 /** Plugin RPC responses may be the raw value or an `{ data }` envelope; an `{ error }` envelope throws. */
@@ -54,7 +68,9 @@ export function parsePocketInfo(value: unknown): PocketInfo | undefined {
   const info = value as Record<string, unknown>;
   const protocolVersion = typeof info.protocolVersion === "number" ? info.protocolVersion : Number(info.protocolVersion);
   if (!Number.isFinite(protocolVersion)) return undefined;
-  return { protocolVersion, ...(typeof info.pluginVersion === "string" ? { pluginVersion: info.pluginVersion } : {}), notificationsConfigured: info.notificationsConfigured === true };
+  const events = Array.isArray(info.events) ? info.events.filter((kind): kind is string => typeof kind === "string") : undefined;
+  return { protocolVersion, ...(typeof info.pluginVersion === "string" ? { pluginVersion: info.pluginVersion } : {}), notificationsConfigured: info.notificationsConfigured === true,
+    ...(events ? { events } : {}), ...(typeof info.subagents === "boolean" ? { subagents: info.subagents } : {}) };
 }
 export function parseTestResult(value: unknown): { ok: boolean; error?: string } {
   if (!value || typeof value !== "object") return { ok: false, error: "Unexpected response from the plugin" };
@@ -85,7 +101,7 @@ export function deriveStatus(input: { platform: string; probe: PluginProbe; reco
   return enabled ? { kind: "on", label: "On", tone: "success", canToggle: true } : { kind: "off", label: "Off", tone: "neutral", canToggle: true };
 }
 
-const PUSH_KINDS: readonly PushKind[] = ["permission", "question", "failed", "finished", "test"];
+const PUSH_KINDS: readonly PushKind[] = ["permission", "question", "failed", "finished", "interrupted", "test"];
 /** Validates a push `data` payload. Anything not marked `pocket: '1'` is not ours. */
 export function parsePushData(raw: unknown): PushData | undefined {
   if (!raw || typeof raw !== "object") return undefined;

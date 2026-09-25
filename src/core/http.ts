@@ -1,5 +1,8 @@
 export type ApiQuery = Record<string, unknown>;
 
+/** OpenCode v2 selects a location with this deepObject query key; a plain `directory` param is silently ignored. */
+export const LOCATION_QUERY_KEY = "location[directory]";
+
 /** Build an API URL while preserving existing query fields and base-path prefixes. */
 export function apiRequestUrl(baseUrl: string, path: string, query: ApiQuery = {}, directory?: string) {
   const question = path.indexOf("?");
@@ -8,7 +11,7 @@ export function apiRequestUrl(baseUrl: string, path: string, query: ApiQuery = {
   for (const [name, value] of Object.entries(query)) {
     if (value !== undefined) params.set(name, String(value));
   }
-  if (directory) params.set("directory", directory);
+  if (directory) params.set(LOCATION_QUERY_KEY, directory);
   const search = params.toString();
   return `${baseUrl.replace(/\/+$/, "")}${route}${search ? `?${search}` : ""}`;
 }

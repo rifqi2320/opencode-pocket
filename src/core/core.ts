@@ -4,7 +4,9 @@ import { fetch as expoFetch } from "expo/fetch";
 import { authHeaders, classifyFetchError, classifyHttpError, makeClient, reconnectDelay } from "./client";
 import { secretKey } from "./credentialStore";
 import { deleteCredential, getCredential, setCredential } from "./credentials";
+import { normalizeDirectory, resolveFolderInput } from "./folders";
 import { fetchApi } from "./http";
+import { blockerLocationMismatches } from "./status";
 import { reconcileSnapshot } from "./status";
 import type { CoreError, PendingForm, PendingPermission, ProfileInput, PromptDelivery, PromptReceipt, ResourceState, ServerProfile, ServerSnapshot, SessionMessage, SessionRecord, SessionSnapshot } from "./types";
 import { CoreError as CoreErrorClass } from "./types";
@@ -214,6 +216,37 @@ export class PocketCore {
     await Promise.all([this.loadMessages(serverId, sessionId), this.loadSessionInbox(rt, state, directory), this.loadSessionPermissions(rt, state, directory), this.loadSessionForms(rt, state, directory)]);
     return state;
   }
+  /** Folders this server already has sessions in (recent inventory, search hits, loaded locations), sorted. */
+  knownDirectories(serverId: string) {
+    const rt = this.runtimes.get(serverId);
+    const fromSessions = [...(rt?.snapshot.sessions.data ?? []), ...Array.from(this.sessions.values()).filter(s => s.serverId === serverId).map(s => s.metadata.data)]
+      .map(record => record?.directory).filter((value): value is string => typeof value === "string" && !!value);
+    return [...new Set([...fromSessions, ...(rt?.snapshot.locations.data ?? [])].map(normalizeDirectory))].sort((a, b) => a.localeCompare(b));
+  }
+  /**
+   * Creates an empty session in `folder` (a known folder name or an absolute path) and returns its id.
+   * OpenCode would otherwise accept or 500 on a missing folder, so existence is checked first via `GET /api/location`.
+   */
+  async createSession(serverId: string, folder: string, title?: string) {
+    const rt = this.requireRuntime(serverId); this.assertWritable(rt);
+    const resolved = resolveFolderInput(folder, this.knownDirectories(serverId));
+    if (!resolved.ok) throw new Error(resolved.error);
+    const directory = resolved.directory;
+    let location: { directory?: unknown } | undefined;
+    try { location = await this.get(rt, "/api/location", { "location[directory]": directory }); }
+    catch (error) {
+      if ((error as CoreError)?.kind === "http") throw new Error(`Folder “${directory}” does not exist on ${rt.profile.name}.`);
+      throw error;
+    }
+    if (typeof location?.directory !== "string" || normalizeDirectory(location.directory) !== directory) throw new Error(`Folder “${directory}” does not exist on ${rt.profile.name}.`);
+    const created = normalizeSession(await this.post<SessionRecord>(rt, "/api/session", { location: { directory }, ...(title?.trim() ? { title: title.trim() } : {}) }).then((value: any) => value?.data ?? value));
+    if (typeof created?.id !== "string") throw new CoreErrorClass("OpenCode did not return the new session", "incompatible");
+    const record = created.directory ? created : { ...created, directory };
+    this.getOrCreateSession(serverId, record.id).metadata = fresh(record);
+    this.includeDiscoveredSession(rt, record);
+    this.invalidate(rt, "sessions"); this.emit();
+    return record.id;
+  }
   async sendPrompt(serverId: string, sessionId: string, text: string, delivery: PromptDelivery = "steer") {
     if (!text.trim()) throw new Error("Prompt cannot be empty");
     const rt = this.requireRuntime(serverId); this.assertWritable(rt); const messageId = `msg_${uuid().replace(/-/g, "")}`;
@@ -329,13 +362,18 @@ export class PocketCore {
   private async refreshBlockers(rt: Runtime) {
     const locations = rt.snapshot.locations.data;
     if (!locations) { rt.snapshot.coverage.blockers = "partial"; rt.snapshot.coverage.reason = "Loaded-location inventory unavailable"; this.emit(); return; }
-    const permissions: PendingPermission[] = []; const forms: PendingForm[] = [];
+    const permissions: PendingPermission[] = []; const forms: PendingForm[] = []; const answered: Array<{ requested: string; reported: unknown }> = [];
     try {
       for (const directory of locations) {
-        const [p, f] = await Promise.all([this.get<any[]>(rt, "/api/permission/request", { directory }), this.get<any[]>(rt, "/api/form", { directory })]);
-        permissions.push(...asArray<PendingPermission>(p)); forms.push(...asArray<PendingForm>(f));
+        const [p, f] = await Promise.all([this.getRaw<any>(rt, "/api/permission/request", {}, directory), this.getRaw<any>(rt, "/api/form", {}, directory)]);
+        permissions.push(...asArray<PendingPermission>(p?.data ?? p)); forms.push(...asArray<PendingForm>(f?.data ?? f));
+        answered.push({ requested: directory, reported: p?.location?.directory }, { requested: directory, reported: f?.location?.directory });
       }
-      rt.snapshot.permissions = fresh(permissions); rt.snapshot.forms = fresh(forms); rt.snapshot.coverage.blockers = "complete";
+      rt.snapshot.permissions = fresh(permissions); rt.snapshot.forms = fresh(forms);
+      // Each response names the location that answered; if the server fell back to another one, those requests were never listed.
+      const missed = blockerLocationMismatches(answered);
+      rt.snapshot.coverage.blockers = missed.length ? "partial" : "complete";
+      if (missed.length) rt.snapshot.coverage.reason = `Server answered from a different location for ${missed.join(", ")}`;
     } catch (error) { rt.snapshot.permissions = failed(rt.snapshot.permissions, error); rt.snapshot.forms = failed(rt.snapshot.forms, error); rt.snapshot.coverage.blockers = "partial"; }
     this.emit();
   }

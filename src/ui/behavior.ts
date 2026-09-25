@@ -23,6 +23,29 @@ export function groupSessionSections(sessions: PocketSession[], filter: SessionF
   return { needs, failures, working, unknown, recent };
 }
 
+export type ProjectGroup = { key: string; serverId?: string; server: string; project: string; directory?: string; sessions: PocketSession[] };
+
+/**
+ * Root sessions grouped per server + working directory, in first-appearance order. Callers pass sessions already
+ * sorted by urgency, so groups holding requests or running work come first and rows keep that order inside a group.
+ */
+export function groupSessionsByProject(sessions: PocketSession[], filter: SessionFilter): ProjectGroup[] {
+  const groups = new Map<string, ProjectGroup>();
+  for (const session of sessions) {
+    if (session.isWorker) continue;
+    if (filter === 'needs' && !actionableRequests(session).length) continue;
+    if (filter === 'working' && session.status !== 'running' && session.familyStatus !== 'working') continue;
+    const key = `${session.serverId ?? session.server}\u0000${session.directory ?? session.project}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = { key, server: session.server, project: session.project, sessions: [], ...(session.serverId ? { serverId: session.serverId } : {}), ...(session.directory ? { directory: session.directory } : {}) };
+      groups.set(key, group);
+    }
+    group.sessions.push(session);
+  }
+  return [...groups.values()];
+}
+
 /** Removing a saved profile is allowed only from its explicit confirmation step. */
 export function canConfirmSavedServerRemoval(pendingId: string | undefined, serverId: string) {
   return pendingId === serverId;

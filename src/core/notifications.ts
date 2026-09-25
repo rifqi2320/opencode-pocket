@@ -6,8 +6,8 @@ import { AppState, Platform } from "react-native";
 import { authHeaders, classifyFetchError } from "./client";
 import type { PocketCore } from "./core";
 import { fetchApi } from "./http";
-import { CHANNEL_ATTENTION, CHANNEL_UPDATES, NOTIFICATIONS_KEY, POCKET_PROTOCOL_VERSION, deriveStatus, extractPushPayload, normalizePreferences, normalizeStore, parsePocketInfo, parseTestResult, pushTarget, rpcErrorType, rpcPath, shouldPresentForeground, unwrapRpcResult } from "./notificationLogic";
-import type { NotificationPreferences, NotificationStatus, NotificationStore, PluginProbe, PushTarget, ServerNotificationRecord } from "./notificationLogic";
+import { CHANNEL_ATTENTION, CHANNEL_UPDATES, NOTIFICATIONS_KEY, POCKET_PROTOCOL_VERSION, availablePreferences, deriveStatus, extractPushPayload, normalizePreferences, normalizeStore, parsePocketInfo, parseTestResult, pushTarget, rpcErrorType, rpcPath, shouldPresentForeground, unwrapRpcResult } from "./notificationLogic";
+import type { NotificationPreferences, NotificationPrefKey, NotificationStatus, NotificationStore, PluginProbe, PushTarget, ServerNotificationRecord } from "./notificationLogic";
 
 const rpcTimeoutMs = 15_000;
 type Listener = () => void;
@@ -45,6 +45,8 @@ export async function callPocketRpc(target: RpcTarget, method: string, input: un
 export type ServerNotificationView = {
   enabled: boolean;
   preferences: NotificationPreferences;
+  /** Preference toggles this server's plugin supports (its `events` option), in display order. */
+  available: NotificationPrefKey[];
   status: NotificationStatus;
   /** An enable/disable/preference/test request for this server is in flight. */
   busy: boolean;
@@ -245,9 +247,11 @@ export class PocketNotifications {
     const servers: Record<string, ServerNotificationView> = {};
     for (const profile of this.core.getSnapshot().profiles) {
       const record = this.store.servers[profile.id]; const lastError = this.lastErrors.get(profile.id);
+      const probe = this.probes.get(profile.id) ?? { state: "unknown" as const };
       servers[profile.id] = {
         enabled: record?.enabled === true, preferences: record?.preferences ?? normalizePreferences(undefined), busy: this.busy.has(profile.id),
-        status: deriveStatus({ platform: Platform.OS, probe: this.probes.get(profile.id) ?? { state: "unknown" }, ...(record ? { record } : {}), ...(this.permission ? { permission: this.permission } : {}), ...(lastError ? { lastError } : {}) }),
+        available: availablePreferences(probe.state === "ok" ? probe.info : undefined),
+        status: deriveStatus({ platform: Platform.OS, probe, ...(record ? { record } : {}), ...(this.permission ? { permission: this.permission } : {}), ...(lastError ? { lastError } : {}) }),
       };
     }
     this.snapshot = { supported: Platform.OS === "android", platform: Platform.OS, servers };

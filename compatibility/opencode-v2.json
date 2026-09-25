@@ -25,8 +25,8 @@
     "conditional": [
       "/api/session/{id}",
       "/api/session/{id}/message?limit=2",
-      "/api/permission/request?directory={loaded-location}",
-      "/api/form?directory={loaded-location}"
+      "/api/permission/request?location[directory]={loaded-location}",
+      "/api/form?location[directory]={loaded-location}"
     ]
   },
   "responseContracts": {

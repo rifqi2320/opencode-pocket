@@ -59,6 +59,9 @@ export function usePocket() {
     loadMoreMessages: (serverId: string, sessionId: string) => pocketCore.loadMoreMessages(serverId, sessionId),
     refresh: (serverId?: string) => pocketCore.refresh(serverId),
     searchSessions: (query: string) => pocketCore.searchSessions(query),
+    /** Create an empty session in a known folder name or absolute path; throws when the folder does not exist. Resolves to the new session id. */
+    createSession: (serverId: string, folder: string, title?: string) => pocketCore.createSession(serverId, folder, title),
+    knownDirectories: (serverId: string) => pocketCore.knownDirectories(serverId),
     sendPrompt: (serverId: string, sessionId: string, text: string, delivery?: "steer" | "queue") => pocketCore.sendPrompt(serverId, sessionId, text, delivery),
     interrupt: (serverId: string, sessionId: string) => pocketCore.interrupt(serverId, sessionId),
     replyPermission: (serverId: string, sessionId: string, requestId: string, decision: "once" | "reject") => pocketCore.replyPermission(serverId, sessionId, requestId, decision),

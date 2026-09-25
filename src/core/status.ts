@@ -129,3 +129,12 @@ export function rollupFamilyRows<T extends { sessionID?: string }>(input: {
     return depth === undefined ? [] : [{ row, ownerSessionId: row.sessionID!, depth }];
   });
 }
+
+/**
+ * Locations whose blocker lists came back from a different location than requested (the server fell back to its
+ * default). A response that doesn't report its location can't be checked, so it counts as answered.
+ */
+export function blockerLocationMismatches(answered: ReadonlyArray<{ requested: string; reported: unknown }>) {
+  const trim = (value: string) => value.trim().replace(/\/+$/, "") || "/";
+  return [...new Set(answered.filter(item => typeof item.reported === "string" && trim(item.reported) !== trim(item.requested)).map(item => item.requested))];
+}

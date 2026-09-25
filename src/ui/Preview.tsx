@@ -12,8 +12,8 @@ const servers: PocketServer[] = [
   { id: 'lab', name: 'Lab box', url: 'https://lab.example.com', state: 'offline', error: 'Could not reach server' },
 ];
 const notificationFixture: { platform: string; servers: Record<string, PocketServerNotifications> } = { platform: 'android', servers: {
-  ws: { enabled: true, busy: false, status: { kind: 'on', label: 'On', tone: 'success', canToggle: true }, preferences: { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, hideDetails: false } },
-  lab: { enabled: false, busy: false, status: { kind: 'plugin-missing', label: 'Plugin not installed · see plugin/README.md', tone: 'neutral', canToggle: false }, preferences: { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, hideDetails: false } },
+  ws: { enabled: true, busy: false, status: { kind: 'on', label: 'On', tone: 'success', canToggle: true }, preferences: { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, sessionInterrupted: false, includeSubagents: false, hideDetails: false } },
+  lab: { enabled: false, busy: false, status: { kind: 'plugin-missing', label: 'Plugin not installed · see plugin/README.md', tone: 'neutral', canToggle: false }, preferences: { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, sessionInterrupted: false, includeSubagents: false, hideDetails: false } },
 } };
 /**
  * Sanitized fixture in the real OpenCode v2 wire shape (GET /api/session/:id/message): one
@@ -71,15 +71,16 @@ const detailMessages: unknown[] = [
 ];
 const base = { server: 'Workstation', familyCoverage: 'complete' as const, freshness: 'live' as const, forms: [], workers: [], messages: [], attention: [], lastSeen: '2s ago' };
 const sessions: PocketSession[] = [
-  { ...base, id: 'a', project: 'api', title: 'API compatibility cleanup', status: 'running', familyStatus: 'working', activeWorkerCount: 1, summary: 'Session is active', agent: 'build', model: 'claude-sonnet-5',
+  { ...base, serverId: 'ws', id: 'a', project: 'api', directory: '/home/dev/api', title: 'API compatibility cleanup', status: 'running', familyStatus: 'working', activeWorkerCount: 1, summary: 'Session is active', agent: 'build', model: 'claude-sonnet-5',
     attention: [{ id: 'p1', kind: 'permission', label: 'Permission · bash · npm test -- --watch=false', ownerSessionKey: 'a' }],
     workers: [{ id: 'w1', title: 'Review worker', status: 'working', relation: 'subagent', depth: 1, needsYou: true, sessionKey: 'w1' }, { id: 'w2', title: 'Test runner', status: 'inactive', relation: 'subagent', depth: 1, sessionKey: 'w2' }],
     forms: [{ id: 'f1', sessionID: 'a', title: 'Which database should the migration target?', fields: [{ key: 'db', type: 'string', title: 'Target', required: true, options: [{ value: 'pg', label: 'Postgres' }, { value: 'my', label: 'MySQL' }] }, { key: 'dry', type: 'boolean', title: 'Dry run first' }] }],
     messages: buildTurns(detailMessages) },
-  { ...base, id: 'b', project: 'web', title: 'Dashboard UI polish', status: 'running', familyStatus: 'working', summary: 'Session is active' },
-  { ...base, id: 'c', project: 'infra', title: 'Terraform drift check', status: 'inactive', familyStatus: 'inactive', summary: 'No active execution observed', failure: 'Failure reported in session activity', lastSeen: '3m ago' },
-  { ...base, id: 'd', project: 'docs', title: 'Write release notes for 0.4', status: 'inactive', familyStatus: 'inactive', summary: 'No active execution observed', lastSeen: '12m ago' },
-  { ...base, id: 'e', server: 'Lab box', project: 'ml', title: 'Tokenizer benchmark', status: 'unknown', familyStatus: 'unknown', familyCoverage: 'unknown', freshness: 'offline', summary: 'Execution status not confirmed', lastSeen: 'not observed' },
+  { ...base, serverId: 'ws', id: 'b', project: 'web', directory: '/home/dev/web', title: 'Dashboard UI polish', status: 'running', familyStatus: 'working', summary: 'Session is active' },
+  { ...base, serverId: 'ws', id: 'c', project: 'infra', directory: '/home/dev/infra', title: 'Terraform drift check', status: 'inactive', familyStatus: 'inactive', summary: 'No active execution observed', failure: 'Failure reported in session activity', lastSeen: '3m ago' },
+  { ...base, serverId: 'ws', id: 'a2', project: 'api', directory: '/home/dev/api', title: 'Rate limiter review', status: 'inactive', familyStatus: 'inactive', summary: 'No active execution observed', lastSeen: '20m ago' },
+  { ...base, serverId: 'ws', id: 'd', project: 'docs', directory: '/home/dev/docs', title: 'Write release notes for 0.4', status: 'inactive', familyStatus: 'inactive', summary: 'No active execution observed', lastSeen: '12m ago' },
+  { ...base, id: 'e', server: 'Lab box', serverId: 'lab', project: 'ml', directory: '/srv/ml', title: 'Tokenizer benchmark', status: 'unknown', familyStatus: 'unknown', familyCoverage: 'unknown', freshness: 'offline', summary: 'Execution status not confirmed', lastSeen: 'not observed' },
 ];
 
 export function Preview() {
@@ -87,7 +88,10 @@ export function Preview() {
   useEffect(() => { const update = () => setScreen(location.hash.split('/')[1] ?? 'sessions'); addEventListener('hashchange', update); return () => removeEventListener('hashchange', update); }, []);
   const wait = async () => { await new Promise(resolve => setTimeout(resolve, 600)); };
   return <View style={{ flex: 1 }}>
-    {screen === 'sessions' ? <SessionsScreen sessions={sessions} servers={servers} onOpen={() => { location.hash = 'preview/detail'; }} onServers={() => { location.hash = 'preview/servers'; }} onRefresh={() => undefined} /> : null}
+    {screen === 'sessions' || screen === 'projects' ? <SessionsScreen sessions={sessions} servers={servers} onOpen={() => { location.hash = 'preview/detail'; }} onServers={() => { location.hash = 'preview/servers'; }} onRefresh={() => undefined}
+      view={screen === 'projects' ? 'project' : 'status'} onViewChange={view => { location.hash = view === 'project' ? 'preview/projects' : 'preview/sessions'; }}
+      knownDirectories={() => ['/home/dev/api', '/home/dev/docs', '/home/dev/infra', '/home/dev/web']}
+      onCreateSession={async (_serverId, folder) => { await wait(); if (!/^(\/home\/dev\/)?(api|docs|infra|web)$/.test(folder.trim())) throw new Error(`Folder “${folder.trim()}” does not exist on Workstation.`); location.hash = 'preview/chat'; }} /> : null}
     {screen === 'empty' ? <SessionsScreen sessions={[]} servers={[]} onOpen={() => undefined} onServers={() => { location.hash = 'preview/servers'; }} onRefresh={() => undefined} /> : null}
     {screen === 'detail' ? <SessionDetailScreen session={sessions[0]} onBack={() => { location.hash = 'preview/sessions'; }} onSend={async () => { await wait(); return { state: 'accepted' }; }} onInterrupt={async () => { await wait(); return true; }} onReply={wait} onReplyForm={async () => { await wait(); return 'answered'; }} onOpenWorker={() => undefined} /> : null}
     {screen === 'chat' ? <SessionDetailScreen session={{ ...sessions[0]!, attention: [], forms: [], workers: [], familyStatus: 'working', activeWorkerCount: 0, hasEarlier: true }} onBack={() => { location.hash = 'preview/sessions'; }} onSend={async () => { await wait(); return { state: 'accepted' }; }} onInterrupt={async () => { await wait(); return true; }} onReply={wait} onReplyForm={async () => { await wait(); return 'answered'; }} onOpenWorker={() => undefined} onLoadEarlier={wait} /> : null}

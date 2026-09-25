@@ -16,7 +16,7 @@ require.extensions[".ts"] = (module, filename) => {
   module._compile(output, filename);
 };
 
-const { classifyRelationship, executionStatus, familyActivity, rollupFamilyRows, sessionDescendants, sessionFreshness, reconcileSnapshot } = require(path.join(__dirname, "status.ts"));
+const { blockerLocationMismatches, classifyRelationship, executionStatus, familyActivity, rollupFamilyRows, sessionDescendants, sessionFreshness, reconcileSnapshot } = require(path.join(__dirname, "status.ts"));
 
 test("foreground activity stays independent of a historical outcome", () => {
   assert.equal(executionStatus({ active: true, outcome: "error", observedAt: 12, freshness: "fresh" }).value, "running");
@@ -105,4 +105,13 @@ test("a completed snapshot is clean only when neither its dirty count nor connec
     reconcileSnapshot({ value: 1, dirtyAtStart: 4, generation: 9 }, 10, 4),
     { publish: false, dirty: true },
   );
+});
+
+test("blockerLocationMismatches flags locations the server answered from its default instead", () => {
+  assert.deepEqual(blockerLocationMismatches([
+    { requested: "/code/api", reported: "/code/api/" },
+    { requested: "/code/web", reported: "/home/me" },
+    { requested: "/code/web", reported: "/home/me" },
+    { requested: "/code/old", reported: undefined },
+  ]), ["/code/web"]);
 });
