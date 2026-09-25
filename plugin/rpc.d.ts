@@ -11,6 +11,8 @@ export interface PocketInfo {
   events?: PocketEventKind[]
   /** Whether devices may opt into subagent outcome pushes (plugin option `subagents`). */
   subagents?: boolean
+  /** Delivery paths this server supports: `expo` (Expo push token) and/or `fcm` (raw FCM token). Missing before 0.3.0 (FCM only). */
+  transports?: Array<'expo' | 'fcm'>
 }
 
 export interface DevicePreferences {
@@ -27,6 +29,7 @@ export interface DevicePreferences {
 
 export interface UpsertDeviceInput {
   deviceId: string
+  /** Push token: an Expo push token (`ExponentPushToken[...]`) or a raw FCM registration token. Field name kept for compatibility. */
   fcmToken: string
   platform: 'android' | 'ios'
   pairingId: string

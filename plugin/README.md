@@ -1,15 +1,16 @@
 # @pocket/opencode-plugin
 
-OpenCode v2 server plugin that sends **Pocket Control** push notifications through Firebase Cloud Messaging (FCM HTTP v1).
+OpenCode v2 server plugin that sends **Pocket Control** push notifications. By default it sends through the [Expo Push Service](https://docs.expo.dev/push-notifications/sending-notifications/), so **it needs no credentials or Firebase setup**. Direct Firebase Cloud Messaging (FCM HTTP v1) is optional, for people who build the app against their own Firebase project.
 
 - Observational only. It reads the server event stream (`ctx.event.subscribe`) and never registers session, tool or permission hooks, so it cannot block, delay or change agent work. All errors are caught and logged.
 - Registers the `pocket` RPC so the phone can register itself over the same OpenCode URL and auth: `POST /api/rpc/pocket/{method}`.
-- No runtime dependencies. OAuth tokens are minted from a service-account key with `node:crypto` (JWT RS256) and cached until they expire.
+- No runtime dependencies. For direct FCM, OAuth tokens are minted from a service-account key with `node:crypto` (JWT RS256) and cached until they expire.
+- A server can only push to phones that registered with it. A phone's push token is only sent to the servers where you turn notifications on, and no key that reaches other users is ever handed out.
 - Tested against OpenCode **v2.0.12** (plugin SDK `@opencode/plugin` 2.0.8).
 
 ## Install
 
-The plugin needs Firebase sender credentials on the OpenCode host (see [Credentials](#credentials)). Plugin options go in the `plugins` array of `opencode.json`.
+No credentials are needed; add the plugin and turn on notifications in the app. Plugin options (all optional) go in the `plugins` array of `opencode.json`.
 
 ### Global (recommended)
 
@@ -21,16 +22,13 @@ Global install makes the `pocket` RPC available in every location. That includes
 {
   "plugins": [
     {
-      "package": "@pocket/opencode-plugin@0.2.0",
-      "options": {
-        "credentialsFile": "/etc/opencode/firebase-sender.json" // optional; else GOOGLE_APPLICATION_CREDENTIALS
-      }
+      "package": "@pocket/opencode-plugin@0.3.0"
     }
   ]
 }
 ```
 
-Or run `opencode plugin add @pocket/opencode-plugin@0.2.0` and then add `options`.
+Or run `opencode plugin add @pocket/opencode-plugin@0.3.0`.
 
 ### Local checkout
 
@@ -48,8 +46,10 @@ Put the same entry in `<project>/opencode.json`. Only locations inside that proj
 
 | Option | Default | Meaning |
 |---|---|---|
-| `credentialsFile` | `$GOOGLE_APPLICATION_CREDENTIALS` | Path to a Firebase service-account JSON |
-| `firebaseProjectId` | `project_id` from the credentials | FCM project to send through |
+| `expo` | `true` | Send through the Expo Push Service (for phones that register an Expo push token, which the published app does) |
+| `expoAccessToken` | none | Only if the Expo project turned on *enhanced push security*. The published app's project doesn't. |
+| `credentialsFile` | `$GOOGLE_APPLICATION_CREDENTIALS` | Firebase service-account JSON for [direct FCM](#direct-fcm-optional). Not needed for the published app. |
+| `firebaseProjectId` | `project_id` from the credentials | FCM project for direct FCM |
 | `projectName` | basename of the project directory | Name shown in notification titles |
 | `throttleSeconds` | `10` | Minimum interval per device + session + kind |
 | `events` | all kinds | Kinds this server pushes at all: any of `permission`, `question`, `failed`, `finished`, `interrupted`. Phones only show toggles for these. |
@@ -64,18 +64,31 @@ Example: only push requests and long runs, never subagents:
 
 ```jsonc
 {
-  "package": "@pocket/opencode-plugin@0.2.0",
+  "package": "@pocket/opencode-plugin@0.3.0",
   "options": { "events": ["permission", "question", "finished"], "minRunSeconds": 120, "subagents": false }
 }
 ```
 
-## Credentials
+## How delivery works
 
-1. Firebase console → Project settings → Service accounts → *Generate new private key*. Alternatively, create a dedicated service account that has only the *Firebase Cloud Messaging API Admin* role (`roles/firebasecloudmessaging.admin`).
+```
+plugin ──(device's Expo push token, no key)──▶ Expo Push Service ──(app owner's Firebase key)──▶ FCM ──▶ phone
+```
+
+- The app registers an **Expo push token** with each server where you turn notifications on (`upsertDevice`). That token is the only thing that lets a server reach that phone.
+- The plugin posts to `https://exp.host/--/api/v2/push/send` with no credentials. Expo holds the app's Firebase sender key.
+- Expo reports some failures (like an uninstalled app) only in delayed receipts. The plugin checks receipts every few minutes and removes devices whose token is no longer registered.
+- The plugin picks the route per device from the token format: an Expo token goes through Expo, and a raw FCM token goes through [direct FCM](#direct-fcm-optional) (if configured).
+
+## Direct FCM (optional)
+
+Only needed if you build the app yourself against **your own** Firebase project **without** Expo push (the app registers raw FCM tokens when a plugin doesn't offer Expo).
+
+1. In Google Cloud Console, create a service account with only the *Firebase Cloud Messaging API Admin* role (`roles/firebasecloudmessaging.admin`) and download a JSON key. Don't use the Firebase *admin SDK* key; it can do much more than send pushes.
 2. Store the file on the OpenCode host, readable only by the OpenCode user (`chmod 600`). Never commit it, and never ship it in the app.
 3. Either set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json` in the OpenCode server's environment (for the background service, in its service environment), or set `options.credentialsFile`.
 
-If credentials are missing or invalid, the plugin still loads. `info()` then returns `notificationsConfigured: false`, and no events are processed.
+If the credentials are invalid, only direct FCM is disabled (with a warning in the server log); Expo delivery keeps working. With `expo: false` and no credentials, `info()` returns `notificationsConfigured: false`.
 
 ## RPC (wire format)
 
@@ -88,8 +101,8 @@ All calls are `POST {base}/api/rpc/pocket/{method}` and use the same auth as the
 
 | Method | Input | Output |
 |---|---|---|
-| `info` | anything | `{ protocolVersion: 1, pluginVersion, notificationsConfigured, events, subagents }` (`events`/`subagents` since 0.2.0) |
-| `upsertDevice` | `{ deviceId, fcmToken, platform: 'android'\|'ios', pairingId, preferences }` | `{ ok: true }` |
+| `info` | anything | `{ protocolVersion: 1, pluginVersion, notificationsConfigured, events, subagents, transports }` (`events`/`subagents` since 0.2.0, `transports: ('expo'\|'fcm')[]` since 0.3.0) |
+| `upsertDevice` | `{ deviceId, fcmToken, platform: 'android'\|'ios', pairingId, preferences }`. `fcmToken` holds either an Expo push token (`ExponentPushToken[…]`) or a raw FCM token; the field name is kept for compatibility. | `{ ok: true }` |
 | `removeDevice` | `{ deviceId }` | `{ ok: true }` (also when unknown) |
 | `testNotification` | `{ deviceId }` | `{ ok: true }` or `{ ok: false, error }` |
 
@@ -109,15 +122,17 @@ Each device registration has independent preferences, chosen on the phone. The s
 | `includeSubagents` | Also send the three outcome kinds above for subagent sessions (requires the server option `subagents`). Optional, default `false`. Permission requests and questions always notify, subagents included. |
 | `hideDetails` | Show a generic title (`OpenCode needs you` / `Session update`) and body, with no project name, session title, command or error text. The routing `data` doesn't change. |
 
-Requests answered before the push goes out are skipped. Every condition is deduplicated by request, form or event id, and the dedupe records are kept in plugin storage (bounded to 500, 7-day retention). If FCM says a token is invalid (`UNREGISTERED`, HTTP 404, or `INVALID_ARGUMENT` about the registration token), the device is removed automatically. Transient FCM errors get one retry.
+Requests answered before the push goes out are skipped. Every condition is deduplicated by request, form or event id, and the dedupe records are kept in plugin storage (bounded to 500, 7-day retention). If a token turns out to be invalid (Expo `DeviceNotRegistered`, immediately or in a receipt; FCM `UNREGISTERED`, HTTP 404, or `INVALID_ARGUMENT` about the registration token), the device is removed automatically. Transient errors (rate limits, 5xx, network) get one retry.
 
 ## Push payload
+
+The plugin builds one message per device. For Expo it becomes `{ to, title, body, data, channelId, priority: 'high', ttl: 86400, sound: 'default' }`; for direct FCM it's sent as is:
 
 - `notification`: `{ title, body }`. The body is at most 120 characters.
 - `data` (all values are strings): `{ pocket: '1', pairingId, kind: 'permission'|'question'|'failed'|'finished'|'interrupted'|'test', eventId, sessionId? }`.
   - `eventId` is the permission request id (`per_…`), the form id (`frm_…`), the session event id (`evt_…`), or `test-…`.
   - `sessionId` is missing only for `test`.
-- `android`: `priority: HIGH`, `ttl: 86400s`, `notification.channel_id`: `pocket-attention` (permission/question) or `pocket-updates` (failed/finished/interrupted/test), and `tag`/`collapse_key` = `${kind}-${sessionId}`.
+- `android`: `priority: HIGH`, `ttl: 86400s`, `notification.channel_id`: `pocket-attention` (permission/question) or `pocket-updates` (failed/finished/interrupted/test), and `tag`/`collapse_key` = `${kind}-${sessionId}` (direct FCM only; Expo has no collapse tag).
 - `apns`: `apns-priority: 10`, `apns-collapse-id` = same tag, `aps.thread-id` = sessionId.
 
 A push is only a hint. The app must refresh state from OpenCode when a notification is opened.

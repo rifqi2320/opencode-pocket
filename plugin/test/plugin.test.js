@@ -39,20 +39,50 @@ test('default export shape matches the OpenCode v2 loader contract', () => {
   assert.deepEqual(Object.keys(pocketRpc.methods).sort(), ['info', 'removeDevice', 'testNotification', 'upsertDevice'])
 })
 
-test('without credentials: RPC works, notifications report unconfigured', async () => {
+test('zero config: Expo push works without credentials; raw FCM tokens have no transport', async () => {
   const saved = process.env.GOOGLE_APPLICATION_CREDENTIALS
   delete process.env.GOOGLE_APPLICATION_CREDENTIALS
-  const warn = console.warn; console.warn = () => {}
+  const realFetch = globalThis.fetch
+  const pushed = []
+  globalThis.fetch = async (url, init) => {
+    pushed.push({ url: String(url), body: JSON.parse(init.body), auth: init.headers.authorization })
+    return { ok: true, status: 200, json: async () => ({ data: { status: 'ok', id: 'ticket-1' } }) }
+  }
   try {
     const { ctx, rpc } = fakeCtx()
     const cleanup = await plugin.setup(ctx)
     const h = rpc.registered.handlers
-    assert.deepEqual(await h.info(undefined), { protocolVersion: 1, pluginVersion: PLUGIN_VERSION, notificationsConfigured: false, events: ['permission', 'question', 'failed', 'finished', 'interrupted'], subagents: true })
-    const input = { deviceId: 'd', fcmToken: 't', platform: 'ios', pairingId: 'p', preferences: { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, hideDetails: false } }
-    assert.deepEqual(await h.upsertDevice(input), { ok: true })
-    const t = await h.testNotification({ deviceId: 'd' })
-    assert.equal(t.ok, false)
-    assert.deepEqual(await h.removeDevice({ deviceId: 'd' }), { ok: true })
+    assert.deepEqual(await h.info(undefined), { protocolVersion: 1, pluginVersion: PLUGIN_VERSION, notificationsConfigured: true, events: ['permission', 'question', 'failed', 'finished', 'interrupted'], subagents: true, transports: ['expo'] })
+    const prefs = { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, hideDetails: false }
+    await h.upsertDevice({ deviceId: 'expo', fcmToken: 'ExponentPushToken[abc123]', platform: 'android', pairingId: 'p1', preferences: prefs })
+    assert.deepEqual(await h.testNotification({ deviceId: 'expo' }), { ok: true })
+    assert.equal(pushed[0].url, 'https://exp.host/--/api/v2/push/send')
+    assert.equal(pushed[0].body.to, 'ExponentPushToken[abc123]')
+    assert.equal(pushed[0].body.data.kind, 'test')
+    assert.equal(pushed[0].auth, undefined)
+    await h.upsertDevice({ deviceId: 'raw', fcmToken: 'raw-fcm-token', platform: 'android', pairingId: 'p2', preferences: prefs })
+    const t = await h.testNotification({ deviceId: 'raw' })
+    assert.equal(t.ok, false); assert.match(t.error, /no Firebase credentials/)
+    assert.deepEqual(await h.removeDevice({ deviceId: 'raw' }), { ok: true })
+    await cleanup()
+  } finally {
+    globalThis.fetch = realFetch
+    if (saved !== undefined) process.env.GOOGLE_APPLICATION_CREDENTIALS = saved
+  }
+})
+
+test('expo: false and no credentials: RPC works, notifications report unconfigured', async () => {
+  const saved = process.env.GOOGLE_APPLICATION_CREDENTIALS
+  delete process.env.GOOGLE_APPLICATION_CREDENTIALS
+  const warn = console.warn; console.warn = () => {}
+  try {
+    const { ctx, rpc } = fakeCtx({ options: { expo: false } })
+    const cleanup = await plugin.setup(ctx)
+    const h = rpc.registered.handlers
+    const info = await h.info(undefined)
+    assert.equal(info.notificationsConfigured, false); assert.deepEqual(info.transports, [])
+    await h.upsertDevice({ deviceId: 'd', fcmToken: 't', platform: 'ios', pairingId: 'p', preferences: { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, hideDetails: false } })
+    assert.equal((await h.testNotification({ deviceId: 'd' })).ok, false)
     await cleanup()
   } finally {
     console.warn = warn

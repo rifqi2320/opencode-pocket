@@ -113,7 +113,8 @@ export function validateDevice(input) {
 /**
  * @param {{
  *   storage: { get(k: string): Promise<any>, set(k: string, v: any): Promise<void>, remove(k: string): Promise<void>, scan(o: { prefix: string, after?: string, limit?: number }): Promise<{ entries: readonly { key: string, value: any }[], next?: string }> },
- *   sender?: { send(message: any): Promise<any> } | null,
+ *   sender?: { send(message: any): Promise<any>, checkReceipts?: () => Promise<string[]> } | null,
+ *   transports?: string[],
  *   pluginVersion: string,
  *   projectName: string,
  *   lookupSession?: (sessionId: string) => Promise<{ title?: string, parentID?: string } | undefined>,
@@ -124,7 +125,7 @@ export function validateDevice(input) {
  * }} deps
  */
 export function createNotifier(deps) {
-  const { storage, sender = null, pluginVersion, projectName } = deps
+  const { storage, sender = null, pluginVersion, projectName, transports = [] } = deps
   const now = deps.now ?? Date.now
   const log = deps.log ?? (() => {})
   const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
@@ -215,7 +216,7 @@ export function createNotifier(deps) {
   }
 
   async function testNotification(input) {
-    if (!sender) return { ok: false, error: 'Notifications are not configured on the server (missing Firebase credentials)' }
+    if (!sender) return { ok: false, error: 'Notifications are turned off on the server (Expo push disabled and no Firebase credentials)' }
     const device = await getDevice(input?.deviceId)
     if (!device) return { ok: false, error: 'Device is not registered' }
     const message = buildMessage({ device, kind: 'test', eventId: `test-${now().toString(36)}`, projectName, forceHideDetails: cfg.forceHideDetails })
@@ -225,7 +226,7 @@ export function createNotifier(deps) {
   }
 
   function info() {
-    return { protocolVersion: PROTOCOL_VERSION, pluginVersion, notificationsConfigured: !!sender, events: [...cfg.events], subagents: cfg.allowSubagents }
+    return { protocolVersion: PROTOCOL_VERSION, pluginVersion, notificationsConfigured: !!sender, events: [...cfg.events], subagents: cfg.allowSubagents, transports: [...transports] }
   }
 
   // ---------- event intake (cheap, synchronous) ----------
@@ -405,6 +406,17 @@ export function createNotifier(deps) {
     }
   }
 
+  /** Removes devices whose push token the transport later reported as unregistered (Expo delivery receipts). */
+  async function pruneInvalidTokens() {
+    if (!sender?.checkReceipts) return
+    const invalid = new Set(await safe('check receipts', () => sender.checkReceipts(), []))
+    if (!invalid.size) return
+    for (const device of await safe('list devices', listDevices, [])) {
+      if (invalid.has(device.fcmToken)) await safe('prune device', () => storage.remove(deviceKey(device.deviceId)))
+    }
+    log('info', 'pocket: removed devices with unregistered push tokens', { count: invalid.size })
+  }
+
   /** Drops expired dedupe records and bounds their count. */
   async function compact() {
     await safe('compact', async () => {
@@ -434,6 +446,7 @@ export function createNotifier(deps) {
     testNotification,
     onEvent,
     compact,
+    pruneInvalidTokens,
     listDevices,
     /** Resolves when the queue is drained (tests). */
     async idle() {

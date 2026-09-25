@@ -1,8 +1,9 @@
-// @pocket/opencode-plugin — OpenCode v2 server plugin that sends FCM push hints to Pocket Control.
+// @pocket/opencode-plugin — OpenCode v2 server plugin that sends push hints to Pocket Control (Expo push, or direct FCM).
 // Observational only: uses ctx.event.subscribe + ctx.session.get, registers the `pocket` RPC,
 // and never registers session/tool/permission hooks.
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
+import { createExpoSender, createRoutingSender } from './expo.js'
 import { createFcmSender, loadCredentials } from './fcm.js'
 import { EVENT_KINDS, createNotifier } from './notifier.js'
 import { pocketRpc } from './rpc.js'
@@ -32,8 +33,11 @@ function unwrap(value) {
 }
 
 /**
- * Plugin options (all optional):
- *   credentialsFile     path to a Firebase service-account JSON (else GOOGLE_APPLICATION_CREDENTIALS)
+ * Plugin options (all optional; with none, pushes go through the Expo Push Service):
+ *   expo                send through the Expo Push Service (default true)
+ *   expoAccessToken     Expo access token, only if the Expo project enforces enhanced push security
+ *   credentialsFile     Firebase service-account JSON for direct FCM (else GOOGLE_APPLICATION_CREDENTIALS); only
+ *                       needed for app builds that register raw FCM tokens against your own Firebase project
  *   firebaseProjectId   overrides project_id from the credentials file
  *   projectName         overrides the project name shown in notification titles
  *   throttleSeconds     per device+session+kind minimum interval (default 10)
@@ -78,20 +82,29 @@ export async function setup(ctx) {
     ? options.projectName
     : path.basename(location.project?.directory || directory || '') || 'OpenCode'
 
-  let sender = null
-  try {
-    const loaded = loadCredentials({ credentialsFile: typeof options.credentialsFile === 'string' ? options.credentialsFile : undefined })
-    const projectId = (typeof options.firebaseProjectId === 'string' && options.firebaseProjectId) || (loaded.ok ? loaded.credentials.projectId : undefined)
-    if (!loaded.ok) log('warn', `pocket: notifications disabled: ${loaded.reason}`)
-    else if (!projectId) log('warn', 'pocket: notifications disabled: no Firebase project id')
-    else sender = createFcmSender({ credentials: loaded.credentials, projectId })
-  } catch (cause) {
-    log('warn', 'pocket: notifications disabled: credential setup failed', { error: String(cause?.message ?? cause) })
+  // Direct FCM is optional: only set up when credentials were configured, and a bad setup only disables FCM.
+  let fcm = null
+  const credentialsFile = typeof options.credentialsFile === 'string' ? options.credentialsFile : undefined
+  if (credentialsFile || process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    try {
+      const loaded = loadCredentials({ credentialsFile })
+      const projectId = (typeof options.firebaseProjectId === 'string' && options.firebaseProjectId) || (loaded.ok ? loaded.credentials.projectId : undefined)
+      if (!loaded.ok) log('warn', `pocket: direct FCM disabled: ${loaded.reason}`)
+      else if (!projectId) log('warn', 'pocket: direct FCM disabled: no Firebase project id')
+      else fcm = createFcmSender({ credentials: loaded.credentials, projectId })
+    } catch (cause) {
+      log('warn', 'pocket: direct FCM disabled: credential setup failed', { error: String(cause?.message ?? cause) })
+    }
   }
+  const expo = options.expo === false ? null : createExpoSender(typeof options.expoAccessToken === 'string' && options.expoAccessToken ? { accessToken: options.expoAccessToken } : {})
+  const routing = createRoutingSender({ expo, fcm })
+  const sender = routing.transports.length ? routing : null
+  if (!sender) log('warn', 'pocket: notifications disabled: Expo push is off and no Firebase credentials are set')
 
   const notifier = createNotifier({
     storage: ctx.storage,
     sender,
+    transports: routing.transports,
     pluginVersion: PLUGIN_VERSION,
     projectName,
     log,
@@ -141,6 +154,10 @@ export async function setup(ctx) {
     const t = setTimeout(() => { notifier.compact().catch(() => {}) }, 5_000)
     timers.push(t)
     t.unref?.()
+    // Expo reports unregistered devices only in delayed receipts; check them periodically.
+    const receipts = setInterval(() => { notifier.pruneInvalidTokens().catch(() => {}) }, 5 * 60_000)
+    timers.push(receipts)
+    receipts.unref?.()
   }
 
   return async () => {

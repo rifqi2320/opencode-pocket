@@ -37,6 +37,8 @@ export const pocketRpc = {
           // Kinds this server pushes (plugin option `events`) and whether subagent outcomes are allowed.
           events: { type: 'array', items: { type: 'string' } },
           subagents: { type: 'boolean' },
+          // Delivery paths this server supports (0.3.0+): 'expo' (Expo push token) and/or 'fcm' (raw FCM token).
+          transports: { type: 'array', items: { type: 'string' } },
         },
         required: ['protocolVersion', 'pluginVersion', 'notificationsConfigured'],
       },

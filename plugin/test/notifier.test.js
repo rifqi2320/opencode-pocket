@@ -26,7 +26,7 @@ const permissionAsked = (id, sessionID = 'ses_1', extra = {}) => ({ id: `evt_${i
 const formCreated = (id, sessionID = 'ses_1') => ({ id: `evt_${id}`, type: 'form.created', data: { form: { id, sessionID, title: 'Which database should I use?', fields: [] } } })
 
 test('info reports protocol and configuration', () => {
-  assert.deepEqual(setup().notifier.info(), { protocolVersion: 1, pluginVersion: '0.1.0', notificationsConfigured: true, events: ['permission', 'question', 'failed', 'finished', 'interrupted'], subagents: true })
+  assert.deepEqual(setup().notifier.info(), { protocolVersion: 1, pluginVersion: '0.1.0', notificationsConfigured: true, events: ['permission', 'question', 'failed', 'finished', 'interrupted'], subagents: true, transports: [] })
   assert.deepEqual(setup({ config: { events: ['permission'], allowSubagents: false } }).notifier.info().events, ['permission'])
   const unconfigured = createNotifier({ storage: memoryStorage(), sender: null, pluginVersion: '0.1.0', projectName: 'x' })
   assert.equal(unconfigured.info().notificationsConfigured, false)
@@ -319,4 +319,13 @@ test('server options: events allowlist, subagents off, minRunSeconds, forced hid
   await notifier.idle()
   assert.deepEqual(sender.sent.map((m) => m.data.kind), ['finished'])
   assert.doesNotMatch(JSON.stringify(sender.sent[0].notification), /Secret title|my-app/)
+})
+
+test('pruneInvalidTokens removes devices whose token the transport reported as unregistered', async () => {
+  const sender = { ...fakeSender(), checkReceipts: async () => ['tok-b'] }
+  const { notifier, storage } = setup({ sender })
+  await notifier.upsertDevice(device('a'))
+  await notifier.upsertDevice(device('b'))
+  await notifier.pruneInvalidTokens()
+  assert.deepEqual([...storage.map.keys()].filter((k) => k.startsWith('device/')), ['device/a'])
 })
