@@ -14,6 +14,9 @@ export const preferencesSchema = {
     needsAnswer: { type: 'boolean' },
     sessionFailed: { type: 'boolean' },
     sessionFinished: { type: 'boolean' },
+    // Optional (added in plugin 0.2.0); missing means false.
+    sessionInterrupted: { type: 'boolean' },
+    includeSubagents: { type: 'boolean' },
     hideDetails: { type: 'boolean' },
   },
   required: ['needsPermission', 'needsAnswer', 'sessionFailed', 'sessionFinished', 'hideDetails'],
@@ -31,6 +34,9 @@ export const pocketRpc = {
           protocolVersion: { const: PROTOCOL_VERSION },
           pluginVersion: { type: 'string' },
           notificationsConfigured: { type: 'boolean' },
+          // Kinds this server pushes (plugin option `events`) and whether subagent outcomes are allowed.
+          events: { type: 'array', items: { type: 'string' } },
+          subagents: { type: 'boolean' },
         },
         required: ['protocolVersion', 'pluginVersion', 'notificationsConfigured'],
       },

@@ -1,6 +1,6 @@
 {
   "name": "@pocket/opencode-plugin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "OpenCode v2 server plugin that sends Pocket Control push notifications through Firebase Cloud Messaging",
   "type": "module",
   "license": "MIT",

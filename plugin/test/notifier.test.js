@@ -26,7 +26,8 @@ const permissionAsked = (id, sessionID = 'ses_1', extra = {}) => ({ id: `evt_${i
 const formCreated = (id, sessionID = 'ses_1') => ({ id: `evt_${id}`, type: 'form.created', data: { form: { id, sessionID, title: 'Which database should I use?', fields: [] } } })
 
 test('info reports protocol and configuration', () => {
-  assert.deepEqual(setup().notifier.info(), { protocolVersion: 1, pluginVersion: '0.1.0', notificationsConfigured: true })
+  assert.deepEqual(setup().notifier.info(), { protocolVersion: 1, pluginVersion: '0.1.0', notificationsConfigured: true, events: ['permission', 'question', 'failed', 'finished', 'interrupted'], subagents: true })
+  assert.deepEqual(setup({ config: { events: ['permission'], allowSubagents: false } }).notifier.info().events, ['permission'])
   const unconfigured = createNotifier({ storage: memoryStorage(), sender: null, pluginVersion: '0.1.0', projectName: 'x' })
   assert.equal(unconfigured.info().notificationsConfigured, false)
 })
@@ -267,4 +268,55 @@ test('no devices / no sender / malformed events never throw', async () => {
 test('buildMessage truncates body to 120 chars', () => {
   const m = buildMessage({ device: device('a'), kind: 'permission', sessionId: 's', eventId: 'e', projectName: 'p', sessionTitle: 'T', detail: 'x'.repeat(500) })
   assert.equal(m.notification.body.length, 120)
+})
+
+test('older apps without the new preference keys still register; missing keys default to false', async () => {
+  const { notifier, storage } = setup()
+  assert.equal(validateDevice(device('a')), undefined)
+  await notifier.upsertDevice(device('a'))
+  assert.equal(storage.map.get('device/a').preferences.sessionInterrupted, false)
+  assert.equal(storage.map.get('device/a').preferences.includeSubagents, false)
+  assert.match(validateDevice({ ...device('b'), preferences: prefs({ includeSubagents: 'yes' }) }), /includeSubagents/)
+})
+
+test('interrupted pushes follow the sessionInterrupted preference', async () => {
+  const { notifier, sender } = setup({ sessions: { root: { title: 'Root' } } })
+  await notifier.upsertDevice(device('on', { sessionInterrupted: true }))
+  await notifier.upsertDevice(device('off'))
+  notifier.onEvent({ id: 'i1', type: 'session.execution.started', data: { sessionID: 'root' } })
+  notifier.onEvent({ id: 'i2', type: 'session.execution.interrupted', data: { sessionID: 'root' } })
+  await notifier.idle()
+  assert.deepEqual(sender.sent.map((m) => [m.token, m.data.kind, m.android.notification.channel_id]), [['tok-on', 'interrupted', CHANNEL_UPDATES]])
+  assert.match(sender.sent[0].notification.title, /session interrupted/)
+})
+
+test('subagent outcomes reach only devices that opted in', async () => {
+  const { notifier, sender } = setup({ sessions: { child: { title: 'Child', parentID: 'root' }, root: { title: 'R' } } })
+  await notifier.upsertDevice(device('sub', { sessionFinished: true, includeSubagents: true }))
+  await notifier.upsertDevice(device('root-only', { sessionFinished: true }))
+  notifier.onEvent({ id: 'f1', type: 'session.execution.failed', data: { sessionID: 'child', error: { message: 'x' } } })
+  notifier.onEvent({ id: 'b1', type: 'session.status', data: { sessionID: 'child', status: { type: 'busy' } } })
+  notifier.onEvent({ id: 'b2', type: 'session.status', data: { sessionID: 'child', status: { type: 'idle' } } })
+  await notifier.idle()
+  assert.deepEqual(sender.sent.map((m) => [m.token, m.data.kind]), [['tok-sub', 'failed'], ['tok-sub', 'finished']])
+  assert.match(sender.sent[0].notification.title, /subagent failed/)
+})
+
+test('server options: events allowlist, subagents off, minRunSeconds, forced hideDetails', async () => {
+  const { notifier, sender, advance } = setup({
+    sessions: { root: { title: 'Secret title' }, child: { parentID: 'root' } },
+    config: { events: ['finished', 'failed'], allowSubagents: false, minRunMs: 60_000, forceHideDetails: true },
+  })
+  await notifier.upsertDevice(device('a', { sessionFinished: true, includeSubagents: true }))
+  notifier.onEvent(permissionAsked('per_x', 'root')) // not in events
+  notifier.onEvent({ id: 'c1', type: 'session.execution.failed', data: { sessionID: 'child' } }) // subagents disabled
+  notifier.onEvent({ id: 'r1', type: 'session.execution.started', data: { sessionID: 'root' } })
+  advance(5_000)
+  notifier.onEvent({ id: 'r2', type: 'session.execution.succeeded', data: { sessionID: 'root' } }) // too short
+  notifier.onEvent({ id: 'r3', type: 'session.execution.started', data: { sessionID: 'root' } })
+  advance(61_000)
+  notifier.onEvent({ id: 'r4', type: 'session.execution.succeeded', data: { sessionID: 'root' } })
+  await notifier.idle()
+  assert.deepEqual(sender.sent.map((m) => m.data.kind), ['finished'])
+  assert.doesNotMatch(JSON.stringify(sender.sent[0].notification), /Secret title|my-app/)
 })

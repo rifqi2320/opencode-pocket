@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { createFcmSender, loadCredentials } from './fcm.js'
-import { createNotifier } from './notifier.js'
+import { EVENT_KINDS, createNotifier } from './notifier.js'
 import { pocketRpc } from './rpc.js'
 
 export const PLUGIN_ID = 'pocket'
@@ -37,8 +37,38 @@ function unwrap(value) {
  *   firebaseProjectId   overrides project_id from the credentials file
  *   projectName         overrides the project name shown in notification titles
  *   throttleSeconds     per device+session+kind minimum interval (default 10)
+ *   events              kinds this server pushes at all (default: every kind); phones choose among them
+ *   subagents           let phones opt into subagent finished/failed/interrupted pushes (default true)
+ *   minRunSeconds       skip `finished` pushes for runs shorter than this (default 0)
+ *   hideDetails         force generic notification text for every device (default false)
  *   verbose             log info-level messages
  */
+/** Maps `opencode.json` plugin options onto notifier config; invalid values are ignored with a warning. */
+export function notifierConfig(options, log = () => {}) {
+  const config = {}
+  const seconds = (name) => {
+    const value = options[name]
+    if (value === undefined) return undefined
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return value * 1000
+    log('warn', `pocket: ignoring option ${name}: expected a non-negative number`)
+    return undefined
+  }
+  const throttleMs = seconds('throttleSeconds')
+  if (throttleMs !== undefined) config.throttleMs = throttleMs
+  const minRunMs = seconds('minRunSeconds')
+  if (minRunMs !== undefined) config.minRunMs = minRunMs
+  if (options.events !== undefined) {
+    if (Array.isArray(options.events)) {
+      const unknown = options.events.filter((kind) => !EVENT_KINDS.includes(kind))
+      if (unknown.length) log('warn', `pocket: ignoring unknown events: ${unknown.join(', ')}`)
+      config.events = EVENT_KINDS.filter((kind) => options.events.includes(kind))
+    } else log('warn', `pocket: ignoring option events: expected an array of ${EVENT_KINDS.join(' | ')}`)
+  }
+  if (typeof options.subagents === 'boolean') config.allowSubagents = options.subagents
+  if (typeof options.hideDetails === 'boolean') config.forceHideDetails = options.hideDetails
+  return config
+}
+
 export async function setup(ctx) {
   const options = ctx.options ?? {}
   const log = makeLog(!!options.verbose)
@@ -65,7 +95,7 @@ export async function setup(ctx) {
     pluginVersion: PLUGIN_VERSION,
     projectName,
     log,
-    config: Number(options.throttleSeconds) >= 0 && options.throttleSeconds !== undefined ? { throttleMs: Number(options.throttleSeconds) * 1000 } : {},
+    config: notifierConfig(options, log),
     lookupSession: async (sessionID) => {
       const info = unwrap(await ctx.session.get({ sessionID }))
       return info && typeof info === 'object' ? { title: info.title, parentID: info.parentID } : undefined

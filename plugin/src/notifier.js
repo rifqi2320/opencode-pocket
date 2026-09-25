@@ -2,8 +2,15 @@
 // Everything here is observational and fail-safe: errors are caught and logged, never thrown into OpenCode.
 import { PROTOCOL_VERSION } from './rpc.js'
 
-export const KINDS = /** @type {const} */ (['permission', 'question', 'failed', 'finished', 'test'])
-const PREFERENCE_FOR = { permission: 'needsPermission', question: 'needsAnswer', failed: 'sessionFailed', finished: 'sessionFinished' }
+export const KINDS = /** @type {const} */ (['permission', 'question', 'failed', 'finished', 'interrupted', 'test'])
+/** Kinds a server can push (everything but `test`); the `events` option narrows this list. */
+export const EVENT_KINDS = KINDS.filter((kind) => kind !== 'test')
+const PREFERENCE_FOR = { permission: 'needsPermission', question: 'needsAnswer', failed: 'sessionFailed', finished: 'sessionFinished', interrupted: 'sessionInterrupted' }
+/** Session-outcome kinds that follow the root/subagent policy (requests always notify, subagents included). */
+const OUTCOME = new Set(['failed', 'finished', 'interrupted'])
+export const PREFERENCE_KEYS = ['needsPermission', 'needsAnswer', 'sessionFailed', 'sessionFinished', 'sessionInterrupted', 'includeSubagents', 'hideDetails']
+/** Added after protocol 1 shipped; older apps omit them, so they default to false. */
+const OPTIONAL_PREFERENCES = new Set(['sessionInterrupted', 'includeSubagents'])
 const ATTENTION = new Set(['permission', 'question'])
 export const CHANNEL_ATTENTION = 'pocket-attention'
 export const CHANNEL_UPDATES = 'pocket-updates'
@@ -17,6 +24,10 @@ export const DEFAULTS = {
   maxQueue: 200, // bounded in-memory work queue
   retryDelayMs: 3_000, // one bounded retry for transient FCM failures
   sessionCacheMs: 60_000,
+  events: EVENT_KINDS, // kinds this server pushes at all; device preferences choose among them
+  allowSubagents: true, // whether devices may opt into subagent outcome pushes
+  minRunMs: 0, // finished pushes only for runs at least this long
+  forceHideDetails: false, // generic text for every device regardless of its preference
 }
 
 export function truncate(text, max) {
@@ -29,13 +40,14 @@ const sentKey = (key) => `sent/${encodeURIComponent(key)}`
 
 /**
  * Builds the FCM v1 `message` object (without the top-level `{ message }` wrapper).
- * @param {{ device: any, kind: string, sessionId?: string, eventId: string, projectName: string, sessionTitle?: string, detail?: string }} input
+ * @param {{ device: any, kind: string, sessionId?: string, eventId: string, projectName: string, sessionTitle?: string, detail?: string, subagent?: boolean, forceHideDetails?: boolean }} input
  */
-export function buildMessage({ device, kind, sessionId, eventId, projectName, sessionTitle, detail }) {
-  const hide = !!device.preferences?.hideDetails
+export function buildMessage({ device, kind, sessionId, eventId, projectName, sessionTitle, detail, subagent = false, forceHideDetails = false }) {
+  const hide = forceHideDetails || !!device.preferences?.hideDetails
   const attention = ATTENTION.has(kind)
   const project = truncate(projectName || 'OpenCode', 40)
   const title = truncate(sessionTitle || 'Untitled session', 60)
+  const who = subagent ? 'subagent' : 'session'
   let notification
   if (hide) {
     const bodies = {
@@ -43,6 +55,7 @@ export function buildMessage({ device, kind, sessionId, eventId, projectName, se
       question: 'A session needs your attention',
       failed: 'A session stopped with an error',
       finished: 'A session finished',
+      interrupted: 'A session was interrupted',
       test: 'Test notification',
     }
     notification = { title: attention ? 'OpenCode needs you' : 'Session update', body: bodies[kind] }
@@ -51,9 +64,11 @@ export function buildMessage({ device, kind, sessionId, eventId, projectName, se
   } else if (kind === 'question') {
     notification = { title: `${project}: question`, body: truncate(detail || title, 120) }
   } else if (kind === 'failed') {
-    notification = { title: `${project}: session failed`, body: truncate(detail ? `${title} · ${detail}` : title, 120) }
+    notification = { title: `${project}: ${who} failed`, body: truncate(detail ? `${title} · ${detail}` : title, 120) }
   } else if (kind === 'finished') {
-    notification = { title: `${project}: session finished`, body: truncate(title, 120) }
+    notification = { title: `${project}: ${who} finished`, body: truncate(title, 120) }
+  } else if (kind === 'interrupted') {
+    notification = { title: `${project}: ${who} interrupted`, body: truncate(title, 120) }
   } else {
     notification = { title: 'Pocket Control', body: truncate(`Notifications from ${project} are working`, 120) }
   }
@@ -88,7 +103,8 @@ export function validateDevice(input) {
   if (input.platform !== 'android' && input.platform !== 'ios') return 'platform must be android or ios'
   const p = input.preferences
   if (!p || typeof p !== 'object') return 'preferences must be an object'
-  for (const key of ['needsPermission', 'needsAnswer', 'sessionFailed', 'sessionFinished', 'hideDetails']) {
+  for (const key of PREFERENCE_KEYS) {
+    if (p[key] === undefined && OPTIONAL_PREFERENCES.has(key)) continue
     if (typeof p[key] !== 'boolean') return `preferences.${key} must be a boolean`
   }
   return undefined
@@ -115,7 +131,7 @@ export function createNotifier(deps) {
   const cfg = { ...DEFAULTS, ...(deps.config ?? {}) }
 
   const queue = []
-  const running = new Set() // sessions observed active since this process started
+  const running = new Map() // sessionId -> start time, for sessions observed active since this process started
   const resolved = new Set() // permission/form ids resolved before a push went out
   const sessions = new Map() // sessionId -> { title?, parentID?, known: boolean, at }
   const sentMemory = new Set()
@@ -162,13 +178,7 @@ export function createNotifier(deps) {
       fcmToken: input.fcmToken,
       platform: input.platform,
       pairingId: input.pairingId,
-      preferences: {
-        needsPermission: input.preferences.needsPermission,
-        needsAnswer: input.preferences.needsAnswer,
-        sessionFailed: input.preferences.sessionFailed,
-        sessionFinished: input.preferences.sessionFinished,
-        hideDetails: input.preferences.hideDetails,
-      },
+      preferences: Object.fromEntries(PREFERENCE_KEYS.map((key) => [key, input.preferences[key] === true])),
       refreshedAt: now(),
     }
     await storage.set(deviceKey(input.deviceId), record)
@@ -208,14 +218,14 @@ export function createNotifier(deps) {
     if (!sender) return { ok: false, error: 'Notifications are not configured on the server (missing Firebase credentials)' }
     const device = await getDevice(input?.deviceId)
     if (!device) return { ok: false, error: 'Device is not registered' }
-    const message = buildMessage({ device, kind: 'test', eventId: `test-${now().toString(36)}`, projectName })
+    const message = buildMessage({ device, kind: 'test', eventId: `test-${now().toString(36)}`, projectName, forceHideDetails: cfg.forceHideDetails })
     const result = await deliver(device, message, { retry: false })
     if (result.ok) return { ok: true }
     return { ok: false, error: result.invalidToken ? `${result.error} (device registration removed)` : result.error }
   }
 
   function info() {
-    return { protocolVersion: PROTOCOL_VERSION, pluginVersion, notificationsConfigured: !!sender }
+    return { protocolVersion: PROTOCOL_VERSION, pluginVersion, notificationsConfigured: !!sender, events: [...cfg.events], subagents: cfg.allowSubagents }
   }
 
   // ---------- event intake (cheap, synchronous) ----------
@@ -269,11 +279,11 @@ export function createNotifier(deps) {
           if (d.id) resolved.add(d.id)
           return
         case 'session.execution.started':
-          if (d.sessionID) running.add(d.sessionID)
+          if (d.sessionID) markRunning(d.sessionID)
           return
         case 'session.status':
           if (!d.sessionID) return
-          if (d.status?.type === 'busy') running.add(d.sessionID)
+          if (d.status?.type === 'busy') markRunning(d.sessionID)
           else if (d.status?.type === 'idle') finish(d.sessionID, event)
           return
         case 'session.execution.succeeded':
@@ -281,7 +291,9 @@ export function createNotifier(deps) {
           if (d.sessionID) finish(d.sessionID, event)
           return
         case 'session.execution.interrupted':
-          if (d.sessionID) running.delete(d.sessionID)
+          if (!d.sessionID) return
+          running.delete(d.sessionID)
+          enqueue({ kind: 'interrupted', sessionId: d.sessionID, eventId: event.id, dedupeKey: `interrupted/${d.sessionID}/${event.durable?.seq ?? event.id}` })
           return
         case 'session.execution.failed':
           if (!d.sessionID) return
@@ -301,9 +313,16 @@ export function createNotifier(deps) {
     }
   }
 
+  function markRunning(sessionId) {
+    if (!running.has(sessionId)) running.set(sessionId, now())
+  }
+
   // A finished push needs an observed active -> inactive boundary in this process (conservative after restarts).
   function finish(sessionId, event) {
-    if (!running.delete(sessionId)) return
+    const startedAt = running.get(sessionId)
+    if (startedAt === undefined) return
+    running.delete(sessionId)
+    if (now() - startedAt < cfg.minRunMs) return
     enqueue({ kind: 'finished', sessionId, eventId: event.id, dedupeKey: `finished/${sessionId}/${event.durable?.seq ?? event.id}` })
   }
 
@@ -351,13 +370,17 @@ export function createNotifier(deps) {
 
   async function process(job) {
     if (!sender) return
+    if (!cfg.events.includes(job.kind)) return
     if (resolved.has(job.eventId)) return
     if (await alreadySent(job.dedupeKey)) return
     const session = await resolveSession(job.sessionId)
-    // Root-session policy: finished pushes only for sessions known to be root; failures skip known subagents.
-    if (job.kind === 'finished' && !(session?.known && !session.parentID)) return
-    if (job.kind === 'failed' && session?.parentID) return
-    const devices = (await safe('list devices', listDevices, [])).filter((d) => d.preferences?.[PREFERENCE_FOR[job.kind]] === true)
+    // Outcome policy: subagent outcomes go only to devices that opted in (and only if the server allows it).
+    // Finished pushes also need the session to be known, so an unresolved lookup never looks like a root.
+    const subagent = !!session?.parentID
+    if (OUTCOME.has(job.kind) && subagent && !cfg.allowSubagents) return
+    if (job.kind === 'finished' && !session?.known) return
+    const devices = (await safe('list devices', listDevices, [])).filter((d) =>
+      d.preferences?.[PREFERENCE_FOR[job.kind]] === true && !(OUTCOME.has(job.kind) && subagent && d.preferences?.includeSubagents !== true))
     await markSent(job.dedupeKey) // mark first: losing a push is preferable to duplicates
     if (resolved.has(job.eventId)) return
     for (const device of devices) {
@@ -375,6 +398,8 @@ export function createNotifier(deps) {
         projectName,
         sessionTitle: session?.title,
         detail: job.detail,
+        subagent: OUTCOME.has(job.kind) && subagent,
+        forceHideDetails: cfg.forceHideDetails,
       })
       await safe('deliver', () => deliver(device, message))
     }

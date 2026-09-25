@@ -47,7 +47,7 @@ test('without credentials: RPC works, notifications report unconfigured', async 
     const { ctx, rpc } = fakeCtx()
     const cleanup = await plugin.setup(ctx)
     const h = rpc.registered.handlers
-    assert.deepEqual(await h.info(undefined), { protocolVersion: 1, pluginVersion: PLUGIN_VERSION, notificationsConfigured: false })
+    assert.deepEqual(await h.info(undefined), { protocolVersion: 1, pluginVersion: PLUGIN_VERSION, notificationsConfigured: false, events: ['permission', 'question', 'failed', 'finished', 'interrupted'], subagents: true })
     const input = { deviceId: 'd', fcmToken: 't', platform: 'ios', pairingId: 'p', preferences: { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, hideDetails: false } }
     assert.deepEqual(await h.upsertDevice(input), { ok: true })
     const t = await h.testNotification({ deviceId: 'd' })
@@ -90,4 +90,15 @@ test('with credentials: events for this location only reach the notifier', async
   } finally {
     globalThis.fetch = realFetch
   }
+})
+
+test('notifierConfig maps options and ignores invalid values', async () => {
+  const { notifierConfig } = await import('../src/index.js')
+  const warnings = []
+  const log = (_level, message) => warnings.push(message)
+  assert.deepEqual(notifierConfig({ throttleSeconds: 5, minRunSeconds: 30, events: ['finished', 'bogus', 'permission'], subagents: false, hideDetails: true }, log),
+    { throttleMs: 5000, minRunMs: 30000, events: ['permission', 'finished'], allowSubagents: false, forceHideDetails: true })
+  assert.equal(warnings.length, 1)
+  assert.deepEqual(notifierConfig({ throttleSeconds: -1, minRunSeconds: '9', events: 'all' }, log), {})
+  assert.equal(warnings.length, 4)
 })

@@ -7,6 +7,10 @@ export interface PocketInfo {
   protocolVersion: 1
   pluginVersion: string
   notificationsConfigured: boolean
+  /** Kinds this server pushes (plugin option `events`). Missing on plugin 0.1.x. */
+  events?: PocketEventKind[]
+  /** Whether devices may opt into subagent outcome pushes (plugin option `subagents`). */
+  subagents?: boolean
 }
 
 export interface DevicePreferences {
@@ -14,6 +18,10 @@ export interface DevicePreferences {
   needsAnswer: boolean
   sessionFailed: boolean
   sessionFinished: boolean
+  /** Optional; defaults to false. */
+  sessionInterrupted?: boolean
+  /** Also push finished/failed/interrupted for subagent sessions. Optional; defaults to false. */
+  includeSubagents?: boolean
   hideDetails: boolean
 }
 
@@ -25,7 +33,8 @@ export interface UpsertDeviceInput {
   preferences: DevicePreferences
 }
 
-export type PocketNotificationKind = 'permission' | 'question' | 'failed' | 'finished' | 'test'
+export type PocketEventKind = 'permission' | 'question' | 'failed' | 'finished' | 'interrupted'
+export type PocketNotificationKind = PocketEventKind | 'test'
 
 /** FCM `data` payload (all values are strings). */
 export interface PocketPushData {

@@ -21,7 +21,7 @@ Global install makes the `pocket` RPC available in every location. That includes
 {
   "plugins": [
     {
-      "package": "@pocket/opencode-plugin@0.1.0",
+      "package": "@pocket/opencode-plugin@0.2.0",
       "options": {
         "credentialsFile": "/etc/opencode/firebase-sender.json" // optional; else GOOGLE_APPLICATION_CREDENTIALS
       }
@@ -30,7 +30,7 @@ Global install makes the `pocket` RPC available in every location. That includes
 }
 ```
 
-Or run `opencode plugin add @pocket/opencode-plugin@0.1.0` and then add `options`.
+Or run `opencode plugin add @pocket/opencode-plugin@0.2.0` and then add `options`.
 
 ### Local checkout
 
@@ -52,7 +52,22 @@ Put the same entry in `<project>/opencode.json`. Only locations inside that proj
 | `firebaseProjectId` | `project_id` from the credentials | FCM project to send through |
 | `projectName` | basename of the project directory | Name shown in notification titles |
 | `throttleSeconds` | `10` | Minimum interval per device + session + kind |
+| `events` | all kinds | Kinds this server pushes at all: any of `permission`, `question`, `failed`, `finished`, `interrupted`. Phones only show toggles for these. |
+| `subagents` | `true` | Allow phones to opt into subagent `finished` / `failed` / `interrupted` pushes |
+| `minRunSeconds` | `0` | Skip `finished` pushes for runs shorter than this |
+| `hideDetails` | `false` | Force generic notification text for every device, whatever its preference |
 | `verbose` | `false` | Log info-level messages (never tokens or keys) |
+
+Invalid option values are ignored, with a warning in the server log.
+
+Example: only push requests and long runs, never subagents:
+
+```jsonc
+{
+  "package": "@pocket/opencode-plugin@0.2.0",
+  "options": { "events": ["permission", "question", "finished"], "minRunSeconds": 120, "subagents": false }
+}
+```
 
 ## Credentials
 
@@ -73,7 +88,7 @@ All calls are `POST {base}/api/rpc/pocket/{method}` and use the same auth as the
 
 | Method | Input | Output |
 |---|---|---|
-| `info` | anything | `{ protocolVersion: 1, pluginVersion, notificationsConfigured }` |
+| `info` | anything | `{ protocolVersion: 1, pluginVersion, notificationsConfigured, events, subagents }` (`events`/`subagents` since 0.2.0) |
 | `upsertDevice` | `{ deviceId, fcmToken, platform: 'android'\|'ios', pairingId, preferences }` | `{ ok: true }` |
 | `removeDevice` | `{ deviceId }` | `{ ok: true }` (also when unknown) |
 | `testNotification` | `{ deviceId }` | `{ ok: true }` or `{ ok: false, error }` |
@@ -82,14 +97,16 @@ Clients can import the JSON-Schema RPC definition and types from `@pocket/openco
 
 ## Preferences
 
-Each device registration has independent preferences. Call `upsertDevice` again to change them or to refresh the FCM token. Registrations that aren't refreshed for 90 days expire.
+Each device registration has independent preferences, chosen on the phone. The server options above decide which kinds exist at all; preferences pick among them. Call `upsertDevice` again to change them or to refresh the FCM token. Registrations that aren't refreshed for 90 days expire.
 
 | Preference | Push when |
 |---|---|
 | `needsPermission` | A new permission request is asked (`permission.asked`) in any session, subagents included |
 | `needsAnswer` | A new question/form is created (`form.created`) |
-| `sessionFailed` | A root session's execution fails (`session.execution.failed`). Known subagent failures are skipped. |
-| `sessionFinished` | A root session goes from running to idle/succeeded, and the plugin saw it start. Off by default in the app. Never sent for subagents, interruptions, or runs that started before the plugin loaded. |
+| `sessionFailed` | A session's execution fails (`session.execution.failed`). Subagents only with `includeSubagents`. |
+| `sessionFinished` | A session goes from running to idle/succeeded, and the plugin saw it start. Off by default in the app. Never sent for interruptions, runs shorter than `minRunSeconds`, or runs that started before the plugin loaded. Subagents only with `includeSubagents`. |
+| `sessionInterrupted` | A run is interrupted (`session.execution.interrupted`). Optional, default `false`. Subagents only with `includeSubagents`. |
+| `includeSubagents` | Also send the three outcome kinds above for subagent sessions (requires the server option `subagents`). Optional, default `false`. Permission requests and questions always notify, subagents included. |
 | `hideDetails` | Show a generic title (`OpenCode needs you` / `Session update`) and body, with no project name, session title, command or error text. The routing `data` doesn't change. |
 
 Requests answered before the push goes out are skipped. Every condition is deduplicated by request, form or event id, and the dedupe records are kept in plugin storage (bounded to 500, 7-day retention). If FCM says a token is invalid (`UNREGISTERED`, HTTP 404, or `INVALID_ARGUMENT` about the registration token), the device is removed automatically. Transient FCM errors get one retry.
@@ -97,10 +114,10 @@ Requests answered before the push goes out are skipped. Every condition is dedup
 ## Push payload
 
 - `notification`: `{ title, body }`. The body is at most 120 characters.
-- `data` (all values are strings): `{ pocket: '1', pairingId, kind: 'permission'|'question'|'failed'|'finished'|'test', eventId, sessionId? }`.
+- `data` (all values are strings): `{ pocket: '1', pairingId, kind: 'permission'|'question'|'failed'|'finished'|'interrupted'|'test', eventId, sessionId? }`.
   - `eventId` is the permission request id (`per_…`), the form id (`frm_…`), the session event id (`evt_…`), or `test-…`.
   - `sessionId` is missing only for `test`.
-- `android`: `priority: HIGH`, `ttl: 86400s`, `notification.channel_id`: `pocket-attention` (permission/question) or `pocket-updates` (failed/finished/test), and `tag`/`collapse_key` = `${kind}-${sessionId}`.
+- `android`: `priority: HIGH`, `ttl: 86400s`, `notification.channel_id`: `pocket-attention` (permission/question) or `pocket-updates` (failed/finished/interrupted/test), and `tag`/`collapse_key` = `${kind}-${sessionId}`.
 - `apns`: `apns-priority: 10`, `apns-collapse-id` = same tag, `aps.thread-id` = sessionId.
 
 A push is only a hint. The app must refresh state from OpenCode when a notification is opened.
