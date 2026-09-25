@@ -1,0 +1,15 @@
+node_modules/
+.expo/
+dist/
+web-build/
+*.tsbuildinfo
+.DS_Store
+
+# Generated native project (expo prebuild) and build outputs
+android/
+ios/
+*.apk
+*.aab
+*firebase-adminsdk*.json
+*service-account*.json
+google-services.json

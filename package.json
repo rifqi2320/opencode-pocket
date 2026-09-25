@@ -1,0 +1,42 @@
+{
+  "name": "pocket-control",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo/AppEntry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && expo export --platform web",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@opencode/client": "2.0.5",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "expo": "57.0.23",
+    "expo-crypto": "57.0.3",
+    "expo-notifications": "~57.0.20",
+    "expo-secure-store": "57.0.4",
+    "expo-status-bar": "57.0.1",
+    "expo-system-ui": "~57.0.4",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "5.7.0",
+    "react-native-svg": "15.15.4",
+    "react-native-web": "0.21.2"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.4",
+    "typescript": "6.0.3"
+  },
+  "license": "MIT",
+  "author": "Rifqi Naufal Abdjul",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rifqi2320/opencode-pocket.git"
+  },
+  "funding": "https://github.com/sponsors/rifqi2320"
+}

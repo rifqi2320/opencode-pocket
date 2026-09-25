@@ -1,0 +1,61 @@
+{
+  "target": "Pocket Control read-only live contract smoke",
+  "server": {
+    "major": 2,
+    "testedVersion": "2.0.12",
+    "versionKey": "version"
+  },
+  "client": {
+    "package": "@opencode/client",
+    "version": "2.0.5"
+  },
+  "auth": {
+    "scheme": "HTTP Basic",
+    "username": "opencode",
+    "passwordSource": "OPENCODE_PASSWORD runtime environment only"
+  },
+  "requests": {
+    "method": "GET only",
+    "required": [
+      "/api/info",
+      "/api/session?limit=2",
+      "/api/session/active",
+      "/api/debug/location"
+    ],
+    "conditional": [
+      "/api/session/{id}",
+      "/api/session/{id}/message?limit=2",
+      "/api/permission/request?directory={loaded-location}",
+      "/api/form?directory={loaded-location}"
+    ]
+  },
+  "responseContracts": {
+    "info": "JSON object with version field when server reports it",
+    "sessions": "array or object containing data/items/sessions/results; optional cursor.next/nextCursor/next_cursor",
+    "activeSessions": "array or object",
+    "debugLocations": "array or object containing data/items/sessions/results",
+    "sessionMetadata": "object with string id",
+    "messages": "array of rows with string id or info.id; parts may be an array",
+    "permissions": "array of request objects (may be empty)",
+    "forms": "array of form objects (may be empty)"
+  },
+  "observedV2_0_12": {
+    "infoKeys": ["paths", "pid", "urls", "version"],
+    "sessionPage": "data-array with cursor available",
+    "sessionRowKeys": ["agent", "cost", "id", "location", "model", "outcome", "projectID", "time", "title", "tokens"],
+    "activeSessions": "object map",
+    "locationRowKeys": ["directory"],
+    "metadataKeys": ["agent", "cost", "id", "location", "model", "outcome", "projectID", "time", "title", "tokens"],
+    "messageCollection": "data-array",
+    "messageRowKeys": ["agent", "content", "id", "model", "snapshot", "time", "type"],
+    "messageShape": "flat row with string id; no info envelope or parts array observed",
+    "permissions": "array; empty during probe",
+    "forms": "array; empty during probe"
+  },
+  "privacy": {
+    "persistedValues": "schemas and versions only",
+    "probeOutput": "status labels, sanitized version, schema field names, and shape labels only",
+    "transcriptContent": false,
+    "noPrivateIdPathOrPromptValues": true
+  }
+}

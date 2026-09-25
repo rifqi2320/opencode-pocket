@@ -1,0 +1,46 @@
+{
+  "name": "@pocket/opencode-plugin",
+  "version": "0.1.0",
+  "description": "OpenCode v2 server plugin that sends Pocket Control push notifications through Firebase Cloud Messaging",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./index.js",
+    "./server": "./index.js",
+    "./rpc": {
+      "types": "./rpc.d.ts",
+      "import": "./rpc.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "rpc.js",
+    "rpc.d.ts",
+    "src/*.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "fcm",
+    "push"
+  ],
+  "opencode": {
+    "compatibility": "OpenCode v2.0.12 (plugin SDK @opencode/plugin 2.0.8)"
+  },
+  "author": "Rifqi Naufal Abdjul",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rifqi2320/opencode-pocket.git",
+    "directory": "plugin"
+  },
+  "funding": "https://github.com/sponsors/rifqi2320"
+}

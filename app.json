@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "Pocket Control",
+    "slug": "pocket-control",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "scheme": "pocket-control",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.pocketcontrol.mobile"
+    },
+    "android": {
+      "package": "app.pocketcontrol.mobile",
+      "googleServicesFile": "./google-services.json"
+    },
+    "web": {
+      "bundler": "metro",
+      "name": "Pocket Control"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#17241e",
+          "defaultChannel": "pocket-attention"
+        }
+      ]
+    ]
+  }
+}
