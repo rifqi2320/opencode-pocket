@@ -1,4 +1,4 @@
-# Contributing to Pocket Control
+# Contributing to OpenCode Pocket
 
 Thanks for helping out. Bug reports, fixes, docs and feature ideas are all welcome.
 

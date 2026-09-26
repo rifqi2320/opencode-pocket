@@ -1,6 +1,6 @@
-# @pocket/opencode-plugin
+# @rifqi2320/opencode-plugin
 
-OpenCode v2 server plugin that sends **Pocket Control** push notifications. By default it sends through the [Expo Push Service](https://docs.expo.dev/push-notifications/sending-notifications/), so **it needs no credentials or Firebase setup**. Direct Firebase Cloud Messaging (FCM HTTP v1) is optional, for people who build the app against their own Firebase project.
+OpenCode v2 server plugin that sends **OpenCode Pocket** push notifications. By default it sends through the [Expo Push Service](https://docs.expo.dev/push-notifications/sending-notifications/), so **it needs no credentials or Firebase setup**. Direct Firebase Cloud Messaging (FCM HTTP v1) is optional, for people who build the app against their own Firebase project.
 
 - Observational only. It reads the server event stream (`ctx.event.subscribe`) and never registers session, tool or permission hooks, so it cannot block, delay or change agent work. All errors are caught and logged.
 - Registers the `pocket` RPC so the phone can register itself over the same OpenCode URL and auth: `POST /api/rpc/pocket/{method}`.
@@ -22,13 +22,13 @@ Global install makes the `pocket` RPC available in every location. That includes
 {
   "plugins": [
     {
-      "package": "@pocket/opencode-plugin@0.3.0"
+      "package": "@rifqi2320/opencode-plugin@0.1.0"
     }
   ]
 }
 ```
 
-Or run `opencode plugin add @pocket/opencode-plugin@0.3.0`.
+Or run `opencode plugin add @rifqi2320/opencode-plugin@0.1.0`.
 
 ### Local checkout
 
@@ -64,7 +64,7 @@ Example: only push requests and long runs, never subagents:
 
 ```jsonc
 {
-  "package": "@pocket/opencode-plugin@0.3.0",
+  "package": "@rifqi2320/opencode-plugin@0.1.0",
   "options": { "events": ["permission", "question", "finished"], "minRunSeconds": 120, "subagents": false }
 }
 ```
@@ -106,7 +106,7 @@ All calls are `POST {base}/api/rpc/pocket/{method}` and use the same auth as the
 | `removeDevice` | `{ deviceId }` | `{ ok: true }` (also when unknown) |
 | `testNotification` | `{ deviceId }` | `{ ok: true }` or `{ ok: false, error }` |
 
-Clients can import the JSON-Schema RPC definition and types from `@pocket/opencode-plugin/rpc` (no server code).
+Clients can import the JSON-Schema RPC definition and types from `@rifqi2320/opencode-plugin/rpc` (no server code).
 
 ## Preferences
 

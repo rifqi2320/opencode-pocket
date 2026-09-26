@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "Pocket Control",
+    "name": "OpenCode Pocket",
     "slug": "pocket-control",
     "owner": "reefz23",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "scheme": "pocket-control",
+    "scheme": "opencode-pocket",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
@@ -23,7 +23,7 @@
     },
     "web": {
       "bundler": "metro",
-      "name": "Pocket Control",
+      "name": "OpenCode Pocket",
       "favicon": "./assets/favicon.png"
     },
     "plugins": [

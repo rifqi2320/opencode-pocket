@@ -1,4 +1,4 @@
-# Pocket Control — Technical Design
+# OpenCode Pocket — Technical Design
 
 **Status:** First-release design, pending pinned-build integration validation  
 **Date:** September 24, 2026  

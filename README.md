@@ -1,13 +1,13 @@
-<p align="center"><img src="assets/icon.png" alt="Pocket Control icon" width="128" height="128"></p>
+<p align="center"><img src="assets/icon.png" alt="OpenCode Pocket icon" width="128" height="128"></p>
 
-<h1 align="center">Pocket Control</h1>
+<h1 align="center">OpenCode Pocket</h1>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-db61a2?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/rifqi2320)
 ![Expo](https://img.shields.io/badge/Expo-57-000020?logo=expo)
 ![OpenCode](https://img.shields.io/badge/OpenCode-v2-blue)
 
-Pocket Control is a phone app for keeping an eye on your [OpenCode](https://opencode.ai) v2 sessions. It lists what needs your attention first, lets you reply to permission requests and questions, send prompts and interrupt runs, and can push a notification when a session needs you.
+OpenCode Pocket is a phone app for keeping an eye on your [OpenCode](https://opencode.ai) v2 sessions. It lists what needs your attention first, lets you reply to permission requests and questions, send prompts and interrupt runs, and can push a notification when a session needs you.
 
 It only shows live data. Until a server connection succeeds, the home screen is empty. It never shows sample sessions.
 
@@ -30,7 +30,7 @@ It only shows live data. Until a server connection succeeds, the home screen is 
 | --- | --- |
 | `App.tsx`, `src/ui/` | Expo / React Native app: screens, design system, view models |
 | `src/core/` | Networking, persistence, query snapshots, mutations, notification logic |
-| `plugin/` | `@pocket/opencode-plugin`, the OpenCode server plugin for FCM push ([README](plugin/README.md)) |
+| `plugin/` | `@rifqi2320/opencode-plugin`, the OpenCode server plugin for FCM push ([README](plugin/README.md)) |
 | `compatibility/` | The OpenCode v2 contract this build is pinned to |
 | `scripts/` | Contract smoke test against a live OpenCode server |
 | `docs/` | [Product requirements](docs/prd.md) and [technical design](docs/technical-design.md) |
@@ -75,7 +75,7 @@ Open **Servers → +**, enter an HTTPS URL and the server password if one is set
 - Server profiles and delivery receipts are stored in AsyncStorage (localStorage on web).
 - Passwords are stored in Expo SecureStore on iOS/Android. On web they go in localStorage, which is **not encrypted**, so only use a browser profile you trust.
 - Don't put credentials in the URL.
-- The phone must already be able to reach the server. Pocket Control does not set up servers or VPNs, does not bypass TLS, and does not follow redirects to another origin.
+- The phone must already be able to reach the server. OpenCode Pocket does not set up servers or VPNs, does not bypass TLS, and does not follow redirects to another origin.
 
 ## Starting a session
 
@@ -106,7 +106,7 @@ Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for
 
 ## Sponsor
 
-If Pocket Control saves you trips back to your desk, please consider [sponsoring on GitHub](https://github.com/sponsors/rifqi2320). Sponsorships help pay for continued work on the app and the plugin.
+If OpenCode Pocket saves you trips back to your desk, please consider [sponsoring on GitHub](https://github.com/sponsors/rifqi2320). Sponsorships help pay for continued work on the app and the plugin.
 
 ## License
 

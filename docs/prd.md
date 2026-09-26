@@ -1,4 +1,4 @@
-# Pocket Control — Product Requirements Document
+# OpenCode Pocket — Product Requirements Document
 
 **Status:** Exploratory first-release draft  
 **Date:** September 24, 2026  
@@ -11,7 +11,7 @@ Build a phone-sized control surface for coding work already running in OpenCode:
 
 This is not a mobile IDE, another agent runtime, or a prettier chat window. Its distinguishing feature is that the primary agent is not allowed to hide everything happening underneath it.
 
-Working name: **Pocket Control**. The name is provisional; branding is not a release dependency.
+Product name: **OpenCode Pocket**.
 
 ### API baseline and assumptions
 

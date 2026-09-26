@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Read-only Pocket Control contract probe for OpenCode v2.
+ * Read-only OpenCode Pocket contract probe for OpenCode v2.
  *
  * Usage: OPENCODE_BASE_URL=http://127.0.0.1:4096 OPENCODE_PASSWORD=... node scripts/opencode-contract-smoke.mjs
  * OPENCODE_BASE_URL defaults to http://127.0.0.1:4096. Credentials are read at

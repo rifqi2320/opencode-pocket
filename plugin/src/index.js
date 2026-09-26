@@ -1,4 +1,4 @@
-// @pocket/opencode-plugin — OpenCode v2 server plugin that sends push hints to Pocket Control (Expo push, or direct FCM).
+// @rifqi2320/opencode-plugin — OpenCode v2 server plugin that sends push hints to OpenCode Pocket (Expo push, or direct FCM).
 // Observational only: uses ctx.event.subscribe + ctx.session.get, registers the `pocket` RPC,
 // and never registers session/tool/permission hooks.
 import { readFileSync } from 'node:fs'

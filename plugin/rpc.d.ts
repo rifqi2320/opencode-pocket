@@ -1,4 +1,4 @@
-// Types for the Pocket RPC (`@pocket/opencode-plugin/rpc`). Wire: POST /api/rpc/pocket/{method} with body {"input": ...}.
+// Types for the Pocket RPC (`@rifqi2320/opencode-plugin/rpc`). Wire: POST /api/rpc/pocket/{method} with body {"input": ...}.
 
 export declare const PROTOCOL_VERSION: 1
 export declare const RPC_ID: 'pocket'

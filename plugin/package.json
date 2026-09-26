@@ -1,7 +1,7 @@
 {
-  "name": "@pocket/opencode-plugin",
-  "version": "0.3.0",
-  "description": "OpenCode v2 server plugin that sends Pocket Control push notifications (Expo Push Service or Firebase Cloud Messaging)",
+  "name": "@rifqi2320/opencode-plugin",
+  "version": "0.1.0",
+  "description": "OpenCode v2 server plugin that sends OpenCode Pocket push notifications (Expo Push Service or Firebase Cloud Messaging)",
   "type": "module",
   "license": "MIT",
   "exports": {

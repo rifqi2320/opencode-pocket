@@ -70,7 +70,7 @@ export function buildMessage({ device, kind, sessionId, eventId, projectName, se
   } else if (kind === 'interrupted') {
     notification = { title: `${project}: ${who} interrupted`, body: truncate(title, 120) }
   } else {
-    notification = { title: 'Pocket Control', body: truncate(`Notifications from ${project} are working`, 120) }
+    notification = { title: 'OpenCode Pocket', body: truncate(`Notifications from ${project} are working`, 120) }
   }
   const tag = `${kind}-${sessionId ?? 'none'}`.slice(0, 64)
   /** @type {Record<string, string>} */

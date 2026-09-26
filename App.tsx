@@ -78,7 +78,7 @@ function Shell() {
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const title = route.screen === 'detail' ? selected?.title || 'Session' : route.screen === 'servers' ? 'Servers' : 'Sessions';
-    document.title = `Pocket Control — ${title}`;
+    document.title = `OpenCode Pocket — ${title}`;
     const frame = requestAnimationFrame(() => document.getElementById('page-title')?.focus());
     return () => cancelAnimationFrame(frame);
   }, [route.screen, route.screen === 'detail' ? route.key : '', selected?.title]);
