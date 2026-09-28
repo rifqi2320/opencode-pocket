@@ -24,6 +24,8 @@ export type PocketTurn =
   | { kind: 'assistant'; id: string; steps: PocketStep[]; finalText?: string; error?: string; outcome?: string; running?: boolean; durationMs?: number; time?: string; agent?: string };
 export type PocketSession = {
   id: string;
+  /** Server-native ID when this screen is opened from a composite app key. */
+  remoteId?: string;
   server: string;
   /** Server profile id; groups sessions per server when names collide. */
   serverId?: string;

@@ -10,9 +10,9 @@ type AssistantTurn = Extract<PocketTurn, { kind: 'assistant' }>;
 const STEP_WINDOW = 40;
 
 /** Conversation view: user prompts as bubbles, assistant work collapsed above the Markdown answer. */
-export function Timeline({ turns, sessionRunning, hasEarlier, onLoadEarlier }: { turns: PocketTurn[]; sessionRunning: boolean; hasEarlier?: boolean; onLoadEarlier?: () => Promise<void> }) {
+export function Timeline({ turns, sessionRunning, hasEarlier, onLoadEarlier, showThinking = true, expandToolDetails = false }: { turns: PocketTurn[]; sessionRunning: boolean; hasEarlier?: boolean; onLoadEarlier?: () => Promise<void>; showThinking?: boolean; expandToolDetails?: boolean }) {
   const s = useStyles();
-  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => expandToolDetails ? new Set(turns.flatMap(turn => turn.kind === 'assistant' ? [turn.id, ...turn.steps.filter(step => step.kind === 'tool' || step.kind === 'reasoning').map(step => step.id)] : [])) : new Set());
   const [loading, setLoading] = useState(false);
   const toggle = (id: string) => setOpen(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const lastAssistant = [...turns].reverse().find(turn => turn.kind === 'assistant');
@@ -22,7 +22,7 @@ export function Timeline({ turns, sessionRunning, hasEarlier, onLoadEarlier }: {
     {hasEarlier && onLoadEarlier ? <View style={s.earlier}><Button testID="messages_load_earlier" label="Load earlier messages" variant="ghost" size="sm" loading={loading} onPress={() => void loadEarlier()} /></View> : null}
     {turns.length ? turns.map(turn => turn.kind === 'user'
       ? <UserTurn key={turn.id} turn={turn} />
-      : <AssistantTurnView key={turn.id} turn={turn} live={sessionRunning && turn === lastAssistant && !!turn.running} open={open} toggle={toggle} />)
+       : <AssistantTurnView key={turn.id} turn={turn} live={sessionRunning && turn === lastAssistant && !!turn.running} open={open} toggle={toggle} showThinking={showThinking} />)
       : <Text style={s.faint}>No messages loaded</Text>}
   </View>;
 }
@@ -36,22 +36,23 @@ function UserTurn({ turn }: { turn: Extract<PocketTurn, { kind: 'user' }> }) {
   </View>;
 }
 
-function AssistantTurnView({ turn, live, open, toggle }: { turn: AssistantTurn; live: boolean; open: ReadonlySet<string>; toggle: (id: string) => void }) {
+function AssistantTurnView({ turn, live, open, toggle, showThinking }: { turn: AssistantTurn; live: boolean; open: ReadonlySet<string>; toggle: (id: string) => void; showThinking: boolean }) {
   const c = usePalette(); const s = useStyles();
   const [showAll, setShowAll] = useState(false);
-  const summary = summarizeSteps(turn.steps);
+  const steps = showThinking ? turn.steps : turn.steps.filter(step => step.kind !== 'reasoning');
+  const summary = summarizeSteps(steps);
   const expanded = open.has(turn.id);
   const duration = formatDuration(turn.durationMs);
-  const current = live ? summary.running ?? [...turn.steps].reverse().find(step => step.kind === 'tool' || step.kind === 'reasoning') : undefined;
+  const current = live ? summary.running ?? [...steps].reverse().find(step => step.kind === 'tool' || step.kind === 'reasoning') : undefined;
   const liveLabel = current ? current.kind === 'tool' ? `${current.name} · ${current.title}` : current.kind === 'reasoning' ? 'Thinking' : 'Working' : 'Working';
-  const hidden = !showAll && turn.steps.length > STEP_WINDOW ? turn.steps.length - STEP_WINDOW : 0;
-  const visible = hidden ? turn.steps.slice(-STEP_WINDOW) : turn.steps;
+  const hidden = !showAll && steps.length > STEP_WINDOW ? steps.length - STEP_WINDOW : 0;
+  const visible = hidden ? steps.slice(-STEP_WINDOW) : steps;
   const label = live ? liveLabel : [summary.label, duration].filter(Boolean).join(' · ');
 
   return <View style={s.assistant}>
-    {turn.steps.length || live ? <View>
+    {steps.length || live ? <View>
       <AccessiblePressable testID="turn_steps_toggle" accessibilityRole="button" accessibilityState={{ expanded }} accessibilityLabel={`${label}. ${expanded ? 'Hide' : 'Show'} steps`}
-        disabled={!turn.steps.length} onPress={() => toggle(turn.id)} style={({ pressed }) => [s.summary, pressed && s.pressed]}>
+        disabled={!steps.length} onPress={() => toggle(turn.id)} style={({ pressed }) => [s.summary, pressed && s.pressed]}>
         {live ? <ActivityIndicator size="small" color={c.muted} style={s.spinner} /> : <Icon name={expanded ? 'down' : 'chevron'} size={14} color={c.faint} />}
         <Text numberOfLines={1} style={[s.summaryText, live && { color: c.muted }]}>{label}</Text>
         {summary.failed && !live ? <StatusDot tone="danger" size={6} /> : null}

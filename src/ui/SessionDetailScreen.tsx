@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from 'react-native';
-import { AccessiblePressable, Badge, Button, Card, EmptyState, Group, Header, Icon, SectionTitle, Status, StatusDot, type IconName, type Tone } from './components';
+import React, { useEffect, useRef, useState } from 'react';
+import { KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AccessiblePressable, Badge, Button, Card, EmptyState, Group, Header, Icon, IconButton, SectionTitle, Status, StatusDot, Toggle, type IconName, type Tone } from './components';
+import { controlsForSession, DEFAULT_SESSION_CONTROLS, normalizeSessionControlsStore, SESSION_CONTROLS_KEY, sessionControlsId, type PromptDeliveryPreference, type SessionControls, type SessionControlsStore, updateSessionControls } from '../core/sessionControls';
 import { makeStyles, radius, space, type, usePalette } from './theme';
 import { FormReplyCard } from './FormReplyCard';
 import { Timeline } from './Timeline';
@@ -15,6 +17,8 @@ type Props = {
   onReply: (id: string, answer: 'allow' | 'reject') => Promise<void>;
   onReplyForm: (id: string, answers: FormAnswers) => Promise<FormResolution>;
   onOpenWorker: (key: string) => void;
+  /** Refreshes this session without leaving its conversation. */
+  onRefresh: () => Promise<void>;
   /** Fetches the previous page of messages when the server reports more. */
   onLoadEarlier?: () => Promise<void>;
 };
@@ -33,7 +37,7 @@ export function SessionDetailScreen(props: Props) {
   return <SessionDetail key={`${props.session.server}\u0000${props.session.id}`} {...props} session={props.session} />;
 }
 
-function SessionDetail({ session, onBack, onSend, onInterrupt, onReply, onReplyForm, onOpenWorker, onLoadEarlier }: Props & { session: PocketSession }) {
+function SessionDetail({ session, onBack, onSend, onInterrupt, onReply, onReplyForm, onOpenWorker, onRefresh, onLoadEarlier }: Props & { session: PocketSession }) {
   const c = usePalette(); const s = useStyles();
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -41,6 +45,29 @@ function SessionDetail({ session, onBack, onSend, onInterrupt, onReply, onReplyF
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [decisions, setDecisions] = useState<Record<string, string>>({});
   const [workersOpen, setWorkersOpen] = useState(() => session.workers.some(worker => worker.needsYou));
+  const [controlsOpen, setControlsOpen] = useState(false);
+  const controlsId = sessionControlsId(session.serverId ?? session.server, session.remoteId ?? session.id);
+  const controlsStore = useRef<SessionControlsStore>({ sessions: {} });
+  const controlsRevision = useRef(0);
+  const [controls, setControls] = useState<SessionControls>(DEFAULT_SESSION_CONTROLS);
+  useEffect(() => {
+    let active = true;
+    const revision = controlsRevision.current;
+    setControls(DEFAULT_SESSION_CONTROLS);
+    void AsyncStorage.getItem(SESSION_CONTROLS_KEY).then(value => {
+      const store = normalizeSessionControlsStore(value ? JSON.parse(value) : undefined);
+      if (!active || revision !== controlsRevision.current) return;
+      controlsStore.current = store;
+      setControls(controlsForSession(store, controlsId));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [controlsId]);
+  const updateControls = (patch: Partial<SessionControls>) => {
+    controlsRevision.current++;
+    controlsStore.current = updateSessionControls(controlsStore.current, controlsId, patch);
+    setControls(controlsForSession(controlsStore.current, controlsId));
+    void AsyncStorage.setItem(SESSION_CONTROLS_KEY, JSON.stringify(controlsStore.current)).catch(() => undefined);
+  };
 
   const running = session.status === 'running';
   const permissions = session.attention.filter(item => item.kind === 'permission');
@@ -59,7 +86,8 @@ function SessionDetail({ session, onBack, onSend, onInterrupt, onReply, onReplyF
     if (!text.trim() || sending) return;
     setSending(true); setFeedback(null);
     try {
-      const outcome = await onSend(text, running ? 'steer' : 'queue');
+      const delivery = controls.delivery === 'automatic' ? (running ? 'steer' : 'queue') : controls.delivery;
+      const outcome = await onSend(text, delivery);
       setFeedback(outcome?.state === 'accepted' ? { tone: 'success', text: 'Accepted by server · not yet finished', receipt: true } : { tone: 'muted', text: 'Sent · verify session state', receipt: true });
       // Only clear the draft if the user has not edited it while the request was in flight.
       setDraft(current => current === text ? '' : current);
@@ -79,7 +107,7 @@ function SessionDetail({ session, onBack, onSend, onInterrupt, onReply, onReplyF
     <ScrollView style={s.flex} contentContainerStyle={s.page} keyboardShouldPersistTaps="handled">
       <View style={s.content}>
         <Header onBack={onBack} eyebrow={`${session.server} / ${session.project}`} title={session.title}
-          right={session.freshness !== 'live' ? <Status tone={session.freshness === 'offline' ? 'danger' : 'warning'} label={session.freshness === 'offline' ? 'Offline' : 'Stale'} /> : null} />
+          right={<View style={s.headerActions}>{session.freshness !== 'live' ? <Status tone={session.freshness === 'offline' ? 'danger' : 'warning'} label={session.freshness === 'offline' ? 'Offline' : 'Stale'} /> : null}<IconButton testID="session_controls" icon="more" label="Session controls" onPress={() => setControlsOpen(true)} /></View>} />
 
         <View style={s.now}>
           <View style={s.nowRow}><Status tone={statusTone} label={statusLabel} />{meta ? <Text numberOfLines={1} style={s.faint}>{meta}</Text> : null}<View style={s.spacer} />
@@ -128,7 +156,7 @@ function SessionDetail({ session, onBack, onSend, onInterrupt, onReply, onReplyF
         </> : null}
 
         <SectionTitle title="Conversation" />
-        <Timeline turns={session.messages} sessionRunning={running} {...(session.hasEarlier ? { hasEarlier: true } : {})} {...(onLoadEarlier ? { onLoadEarlier } : {})} />
+        <Timeline key={`${session.id}:${controls.showThinking}:${controls.expandToolDetails}`} turns={session.messages} sessionRunning={running} showThinking={controls.showThinking} expandToolDetails={controls.expandToolDetails} {...(session.hasEarlier ? { hasEarlier: true } : {})} {...(onLoadEarlier ? { onLoadEarlier } : {})} />
       </View>
     </ScrollView>
 
@@ -136,7 +164,7 @@ function SessionDetail({ session, onBack, onSend, onInterrupt, onReply, onReplyF
       <View style={[s.content, s.composer]}>
         {feedback ? <Text testID={feedback.receipt ? 'message_receipt' : undefined} {...(feedback.tone === 'danger' ? { accessibilityRole: 'alert' as const } : live)} numberOfLines={2}
           style={[s.feedback, { color: feedback.tone === 'success' ? c.success : feedback.tone === 'danger' ? c.danger : c.muted }]}>{feedback.text}</Text> : null}
-        <Text numberOfLines={1} style={s.faint}>To {session.title}</Text>
+        <Text numberOfLines={1} style={s.faint}>To {session.title} · {deliveryLabel(controls.delivery, running)}</Text>
         <View style={s.composerRow}>
           <TextInput testID="message_input" accessibilityLabel={`Message ${session.title}`} value={draft} onChangeText={setDraft} multiline
             placeholder={running ? 'Guide the running turn…' : 'Message'} placeholderTextColor={c.faint} style={s.input} />
@@ -144,6 +172,9 @@ function SessionDetail({ session, onBack, onSend, onInterrupt, onReply, onReplyF
         </View>
       </View>
     </View>
+    <SessionControlsSheet visible={controlsOpen} session={session} controls={controls} running={running} acting={acting} onClose={() => setControlsOpen(false)} onUpdate={updateControls}
+      onRefresh={() => runAction(async () => { await onRefresh(); setFeedback({ tone: 'muted', text: 'Session refreshed.' }); })}
+      onInterrupt={() => { setControlsOpen(false); interrupt(); }} />
   </KeyboardAvoidingView>;
 }
 
@@ -165,6 +196,67 @@ function WorkerRow({ worker, server, onOpen }: { worker: Worker; server: string;
   return <AccessiblePressable accessibilityRole="button" accessibilityLabel={`Open worker ${worker.title} on ${server}`} onPress={() => onOpen(key)} style={({ pressed }) => [s.row, indent, pressed && s.pressed]}>{content}</AccessiblePressable>;
 }
 
+type ControlsPage = 'home' | 'delivery' | 'details' | 'confirm-stop';
+
+function SessionControlsSheet({ visible, session, controls, running, acting, onClose, onUpdate, onRefresh, onInterrupt }: {
+  visible: boolean; session: PocketSession; controls: SessionControls; running: boolean; acting: boolean; onClose: () => void; onUpdate: (patch: Partial<SessionControls>) => void;
+  onRefresh: () => Promise<void>; onInterrupt: () => void;
+}) {
+  const c = usePalette(); const s = useStyles();
+  const [page, setPage] = useState<ControlsPage>('home');
+  useEffect(() => { if (visible) setPage('home'); }, [visible]);
+  const back = () => page === 'home' ? onClose() : setPage('home');
+  const title = page === 'home' ? 'Session controls' : page === 'delivery' ? 'Prompt delivery' : page === 'details' ? 'Session details' : 'Stop session';
+  return <Modal visible={visible} transparent animationType="slide" onRequestClose={back}>
+    <View style={s.modalOverlay}>
+      <View accessibilityViewIsModal style={s.sheet}>
+        <View style={s.sheetHeader}>
+          {page === 'home' ? <View style={s.sheetHeaderButton} /> : <IconButton icon="back" label="Back to session controls" onPress={back} />}
+          <Text accessibilityRole="header" style={s.sheetTitle}>{title}</Text>
+          <IconButton icon="x" label="Close session controls" onPress={onClose} />
+        </View>
+        <ScrollView contentContainerStyle={s.sheetContent} keyboardShouldPersistTaps="handled">
+          {page === 'home' ? <>
+            <View style={s.sheetIntro}><Text numberOfLines={1} style={s.body}>{session.title}</Text><Text numberOfLines={1} style={s.faint}>{session.server} · {session.project}</Text></View>
+            <SheetSection title="Execution">
+              <ControlRow label="Agent" value={session.agent ?? 'Default'} />
+              <ControlRow label="Model" value={session.model ?? 'Default'} />
+              <ControlRow label="Prompt delivery" value={deliveryLabel(controls.delivery, running)} onPress={() => setPage('delivery')} />
+            </SheetSection>
+            <SheetSection title="Display">
+              <ToggleRow label="Show thinking" value={controls.showThinking} onChange={showThinking => onUpdate({ showThinking })} />
+              <ToggleRow label="Expand tool details" value={controls.expandToolDetails} onChange={expandToolDetails => onUpdate({ expandToolDetails })} />
+            </SheetSection>
+            <SheetSection title="Session">
+              <ControlRow label="Refresh session" value={acting ? 'Refreshing…' : undefined} onPress={() => void onRefresh()} disabled={acting} />
+              <ControlRow label="Session details" onPress={() => setPage('details')} />
+            </SheetSection>
+            {running ? <SheetSection title="Actions"><ControlRow label="Stop session" danger onPress={() => setPage('confirm-stop')} disabled={acting} /></SheetSection> : null}
+            <Text style={s.sheetNote}>These controls apply only to this Pocket session. Agent and model are shown for reference; changing them is not supported here yet.</Text>
+          </> : null}
+          {page === 'delivery' ? <>
+            <Text style={s.sheetDescription}>Choose how messages from Pocket are delivered to this session.</Text>
+            <ChoiceRow label="Automatic" detail="Steer while running; queue when idle." selected={controls.delivery === 'automatic'} onPress={() => { onUpdate({ delivery: 'automatic' }); setPage('home'); }} />
+            <ChoiceRow label="Always steer" detail="Send guidance into the active turn." selected={controls.delivery === 'steer'} onPress={() => { onUpdate({ delivery: 'steer' }); setPage('home'); }} />
+            <ChoiceRow label="Always queue" detail="Send after the current work is ready." selected={controls.delivery === 'queue'} onPress={() => { onUpdate({ delivery: 'queue' }); setPage('home'); }} />
+          </> : null}
+          {page === 'details' ? <SheetSection title="Session"><DetailRow label="Server" value={session.server} /><DetailRow label="Directory" value={session.directory ?? 'Not reported'} /><DetailRow label="Session ID" value={session.remoteId ?? session.id} selectable /><DetailRow label="State" value={`${running ? 'Running' : session.status === 'unknown' ? 'Unknown' : 'Idle'} · ${session.freshness}`} /><DetailRow label="Workers" value={session.activeWorkerCount ? `${session.activeWorkerCount} active` : String(session.workers.length)} /></SheetSection> : null}
+          {page === 'confirm-stop' ? <><Text style={s.sheetDescription}>Interrupt this session? Workers may continue and completed changes are not reverted.</Text><View style={s.sheetActions}><Button label="Cancel" variant="secondary" onPress={() => setPage('home')} /><Button label="Stop session" variant="danger" icon="stop" onPress={onInterrupt} /></View></> : null}
+        </ScrollView>
+      </View>
+    </View>
+  </Modal>;
+}
+
+function SheetSection({ title, children }: { title: string; children: React.ReactNode }) { const s = useStyles(); return <View><SectionTitle title={title} /><Group>{children}</Group></View>; }
+function ControlRow({ label, value, onPress, disabled, danger = false }: { label: string; value?: string; onPress?: () => void; disabled?: boolean; danger?: boolean }) {
+  const c = usePalette(); const s = useStyles(); const body = <><Text style={[s.rowTitle, danger && { color: c.danger }]}>{label}</Text><View style={s.spacer} />{value ? <Text numberOfLines={1} style={s.rowValue}>{value}</Text> : null}{onPress ? <Icon name="chevron" size={16} color={c.faint} /> : null}</>;
+  return onPress ? <AccessiblePressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [s.row, disabled && s.disabled, pressed && s.pressed]}>{body}</AccessiblePressable> : <View style={s.row}>{body}</View>;
+}
+function ToggleRow({ label, value, onChange }: { label: string; value: boolean; onChange: (value: boolean) => void }) { const s = useStyles(); return <View style={s.row}><Text style={s.rowTitle}>{label}</Text><View style={s.spacer} /><Toggle label={label} value={value} onValueChange={onChange} /></View>; }
+function ChoiceRow({ label, detail, selected, onPress }: { label: string; detail: string; selected: boolean; onPress: () => void }) { const c = usePalette(); const s = useStyles(); return <AccessiblePressable accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={`${label}. ${detail}`} onPress={onPress} style={({ pressed }) => [s.choice, pressed && s.pressed]}><View style={s.flex}><Text style={s.rowTitle}>{label}</Text><Text style={s.faint}>{detail}</Text></View>{selected ? <Icon name="check" size={18} color={c.success} /> : null}</AccessiblePressable>; }
+function DetailRow({ label, value, selectable = false }: { label: string; value: string; selectable?: boolean }) { const s = useStyles(); return <View style={s.detailRow}><Text style={s.detailLabel}>{label}</Text><Text selectable={selectable} style={s.detailValue}>{value}</Text></View>; }
+
 function RoundButton({ icon, label, hint, tone, disabled, busy, onPress, testID }: { icon: IconName; label: string; hint?: string; tone: 'accent' | 'danger'; disabled?: boolean; busy?: boolean; onPress: () => void; testID?: string }) {
   const c = usePalette(); const s = useStyles();
   return <AccessiblePressable testID={testID} accessibilityRole="button" accessibilityLabel={label} accessibilityHint={hint} accessibilityState={{ disabled: !!disabled, busy: !!busy }} disabled={disabled} onPress={onPress} hitSlop={4}
@@ -179,6 +271,7 @@ function interruptLabel(result: unknown) {
   if (flag === true) return 'Interrupt acknowledged · workers may continue';
   return 'Interrupt requested · refreshed state is authoritative';
 }
+function deliveryLabel(delivery: PromptDeliveryPreference, running: boolean) { return delivery === 'automatic' ? `Automatic · ${running ? 'steer' : 'queue'}` : delivery === 'steer' ? 'Always steer' : 'Always queue'; }
 function formResolutionText(status: FormResolution) {
   if (status === 'answered') return 'Form answered';
   if (status === 'cancelled') return 'Form was cancelled elsewhere · not replayed';
@@ -189,6 +282,7 @@ function formResolutionText(status: FormResolution) {
 const useStyles = makeStyles(c => ({
   flex: { flex: 1 },
   spacer: { flex: 1 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
   page: { paddingHorizontal: space.lg, paddingBottom: space.xxl, backgroundColor: c.bg, flexGrow: 1 },
   content: { width: '100%', maxWidth: 640, alignSelf: 'center' },
   now: { gap: 6, paddingTop: space.md, paddingBottom: space.sm },
@@ -216,4 +310,19 @@ const useStyles = makeStyles(c => ({
   composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: space.sm },
   input: { flex: 1, minHeight: 44, maxHeight: 140, backgroundColor: c.surfaceAlt, borderRadius: 20, paddingHorizontal: space.lg, paddingTop: 12, paddingBottom: 12, color: c.text, fontSize: Platform.OS === 'web' ? 16 : 15, ...(Platform.OS === 'web' ? { outlineStyle: 'none' } as object : {}) },
   round: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
+  rowValue: { ...type.small, color: c.faint, maxWidth: '52%', textAlign: 'right' },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
+  sheet: { maxHeight: '92%', minHeight: '55%', backgroundColor: c.bg, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, borderWidth: 1, borderBottomWidth: 0, borderColor: c.border, overflow: 'hidden' },
+  sheetHeader: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.sm, borderBottomWidth: 1, borderBottomColor: c.border },
+  sheetHeaderButton: { width: 40, height: 40 },
+  sheetTitle: { ...type.heading, color: c.text },
+  sheetContent: { padding: space.lg, paddingBottom: space.xxl, gap: space.md },
+  sheetIntro: { gap: 2, marginBottom: space.xs },
+  sheetNote: { ...type.caption, color: c.faint, textAlign: 'center', marginTop: space.md },
+  sheetDescription: { ...type.small, color: c.muted, marginBottom: space.sm },
+  sheetActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: space.sm, marginTop: space.md },
+  choice: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 68, paddingHorizontal: space.lg, paddingVertical: space.sm, backgroundColor: c.surface, borderRadius: radius.md, borderWidth: 1, borderColor: c.border, marginBottom: space.sm },
+  detailRow: { gap: 3, paddingHorizontal: space.lg, paddingVertical: space.md },
+  detailLabel: { ...type.caption, color: c.faint },
+  detailValue: { ...type.small, color: c.text },
 }));

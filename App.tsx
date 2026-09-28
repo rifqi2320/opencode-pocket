@@ -181,6 +181,7 @@ function Shell() {
         onNotificationPreference={(id, key, value) => pocket.setNotificationPreferences(id, { [key]: value })}
         onNotificationTest={id => pocket.sendTestNotification(id)} /> : null}
       {route.screen === 'detail' ? <SessionDetailScreen session={selected} onBack={() => setRoute({ screen: 'sessions' })}
+        onRefresh={async () => { if (!selected) return; await pocket.refresh(selected.serverId); await pocket.selectSession(selected.serverId, selected.remoteId); }}
         onSend={async (text, delivery) => { if (!selected) throw new Error('Session unavailable'); return pocket.sendPrompt(selected.serverId, selected.remoteId, text, delivery); }}
         onInterrupt={async () => { if (!selected) throw new Error('Session unavailable'); return pocket.interrupt(selected.serverId, selected.remoteId); }}
         onOpenWorker={openSession}
