@@ -268,7 +268,9 @@ export class PocketCore {
   }
   async interrupt(serverId: string, sessionId: string) {
     const rt = this.requireRuntime(serverId); this.assertWritable(rt);
-    try { const result = await this.post(rt, `/api/session/${enc(sessionId)}/interrupt`, undefined, sessionDirectory(this.getSession(serverId, sessionId)), { resume: false }); this.invalidate(rt, `session:${sessionId}`); void this.loadSession(serverId, sessionId).catch(() => undefined); return result; }
+    // The v2 interrupt route is session-scoped and accepts only `resume`; adding
+    // location[directory] makes OpenCode reject the request as invalid (HTTP 400).
+    try { const result = await this.post(rt, `/api/session/${enc(sessionId)}/interrupt`, undefined, undefined, { resume: false }); this.invalidate(rt, `session:${sessionId}`); void this.loadSession(serverId, sessionId).catch(() => undefined); return result; }
     catch (error) { this.invalidate(rt, `session:${sessionId}`); throw error; }
   }
   async replyPermission(serverId: string, sessionId: string, requestId: string, reply: "once" | "reject") {

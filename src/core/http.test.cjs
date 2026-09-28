@@ -15,15 +15,15 @@ const { fetchApi } = require(path.join(__dirname, "http.ts"));
 const base = "https://opencode.example/prefix";
 const interruptPath = "/api/session/ses_test/interrupt";
 
-test("interrupt with a session directory sends resume=false and location[directory] as independent query params", async () => {
+test("interrupt sends only resume=false; the session URL already identifies its location", async () => {
   const captured = [];
   const captureFetch = async (url) => { captured.push(String(url)); return { ok: true, status: 204 }; };
-  await fetchApi(captureFetch, base, interruptPath, { resume: false }, "/workspace/a & b", { method: "POST" });
+  await fetchApi(captureFetch, base, interruptPath, { resume: false }, undefined, { method: "POST" });
 
   assert.equal(captured.length, 1);
   const requestUrl = new URL(captured[0]);
   assert.equal(requestUrl.pathname, "/prefix/api/session/ses_test/interrupt");
-  assert.deepEqual([...requestUrl.searchParams.entries()], [["resume", "false"], ["location[directory]", "/workspace/a & b"]]);
+  assert.deepEqual([...requestUrl.searchParams.entries()], [["resume", "false"]]);
   assert.equal((captured[0].match(/\?/g) ?? []).length, 1);
 });
 
