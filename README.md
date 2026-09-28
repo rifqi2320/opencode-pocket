@@ -11,7 +11,7 @@ OpenCode Pocket is a phone app for keeping an eye on your [OpenCode](https://ope
 
 It only shows live data. Until a server connection succeeds, the home screen is empty. It never shows sample sessions.
 
-> **Status:** 0.1.0, early. The web build is fine for UI review. Test native HTTPS and event streams on a real device before you leave the app watching unattended work.
+> **Status:** 0.1.0, early. The web build is fine for UI review. Test native connections and event streams on a real device before you leave the app watching unattended work.
 
 ## Features
 
@@ -70,12 +70,12 @@ The repo ships the project's `google-services.json` (the Firebase client config 
 
 ## Connecting a server
 
-Open **Servers → +**, enter an HTTPS URL and the server password if one is set, then connect.
+Open **Servers → +**, enter an `http://` or `https://` URL and the server password if one is set, then connect.
 
 - Server profiles and delivery receipts are stored in AsyncStorage (localStorage on web).
 - Passwords are stored in Expo SecureStore on iOS/Android. On web they go in localStorage, which is **not encrypted**, so only use a browser profile you trust.
 - Don't put credentials in the URL.
-- The phone must already be able to reach the server. OpenCode Pocket does not set up servers or VPNs, does not bypass TLS, and does not follow redirects to another origin.
+- The phone must already be able to reach the server. OpenCode Pocket does not set up servers or VPNs, does not bypass TLS, and does not follow redirects to another origin. HTTP is unencrypted, so use it only on a network you trust.
 
 ## Starting a session
 

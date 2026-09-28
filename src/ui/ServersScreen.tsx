@@ -37,12 +37,12 @@ const STATUS: Record<PocketServer['state'], [string, Tone]> = {
 const scrub = (cause: unknown, fallback: string) => cause instanceof Error && cause.message ? cause.message.replace(/https?:\/\/\S+/g, '[server URL]') : fallback;
 
 function validateUrl(value: string): string | undefined {
-  if (!value.trim()) return 'Enter an HTTPS URL.';
+  if (!value.trim()) return 'Enter an HTTP or HTTPS URL.';
   try {
     const endpoint = new URL(value.trim());
-    if (endpoint.protocol !== 'https:') return 'Use an HTTPS URL.';
+    if (endpoint.protocol !== 'http:' && endpoint.protocol !== 'https:') return 'Use an HTTP or HTTPS URL.';
     if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash) return 'Remove credentials, query and fragment from the URL.';
-  } catch { return 'Enter a complete HTTPS URL.'; }
+  } catch { return 'Enter a complete HTTP or HTTPS URL.'; }
   return undefined;
 }
 
@@ -103,7 +103,7 @@ export function ServersScreen({ servers, onBack, onSave, onUpdate, onRemove, onT
     <Text accessibilityRole="header" {...({ 'aria-level': 2 } as Record<string, unknown>)} style={s.formTitle}>{editing ? 'Edit server' : 'Add server'}</Text>
     <TextField ref={nameRef} nativeID="server-name" errorId="server-name-error" label="Name" placeholder="Workstation" value={name} error={fieldErrors.name} autoCapitalize="words" returnKeyType="next"
       onChangeText={text => { setName(text); setFieldErrors(current => ({ ...current, name: undefined })); }} onSubmitEditing={() => urlRef.current?.focus()} />
-    <TextField ref={urlRef} nativeID="server-url" errorId="server-url-error" label="URL" placeholder="https://opencode.example.com" value={url} error={fieldErrors.url} style={s.mono}
+    <TextField ref={urlRef} nativeID="server-url" errorId="server-url-error" label="URL" placeholder="http://opencode.example.com:4096" value={url} error={fieldErrors.url} style={s.mono}
       autoCapitalize="none" autoCorrect={false} keyboardType="url" returnKeyType="next" onChangeText={text => { setUrl(text); setFieldErrors(current => ({ ...current, url: undefined })); }} />
     <View>
       <TextField label="Password" optional value={credential} onChangeText={setCredential} secureTextEntry={!reveal} autoCapitalize="none" autoCorrect={false} style={s.passwordInput}

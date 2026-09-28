@@ -488,5 +488,5 @@ function key(serverId: string, sessionId: string) { return `${serverId}\u0000${s
 function enc(value: string) { return encodeURIComponent(value); }
 function sessionDirectory(state?: SessionSnapshot) { return state?.metadata.data?.directory; }
 function normalizeUrl(url: string) { return url.trim().replace(/\/+$/, ""); }
-function validateEndpoint(url: string) { let parsed: URL; try { parsed = new URL(url); } catch { throw new Error("Enter a valid HTTPS server URL"); } if (parsed.protocol !== "https:") throw new Error("Server profiles must use HTTPS"); if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error("URL must not contain credentials, query parameters, or a fragment"); }
+export function validateEndpoint(url: string) { let parsed: URL; try { parsed = new URL(url); } catch { throw new Error("Enter a valid HTTP or HTTPS server URL"); } if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("Server profiles must use HTTP or HTTPS"); if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error("URL must not contain credentials, query parameters, or a fragment"); }
 function uuid() { return Crypto.randomUUID(); }

@@ -1,7 +1,7 @@
 export type ServerProfile = {
   id: string;
   name: string;
-  /** HTTPS origin including any reverse-proxy base path; no trailing slash. */
+  /** HTTP(S) origin including any reverse-proxy base path; no trailing slash. */
   url: string;
 };
 
