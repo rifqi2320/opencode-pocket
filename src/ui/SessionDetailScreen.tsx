@@ -44,6 +44,8 @@ export function SessionDetailScreen(props: Props) {
 
 function SessionDetail({ session, onBack, onSend, onInterrupt, onReply, onReplyForm, onOpenWorker, onRefresh, onListModels, onSwitchModel, onLoadEarlier }: Props & { session: PocketSession }) {
   const c = usePalette(); const s = useStyles();
+  const scrollRef = useRef<ScrollView>(null);
+  const lastScrollY = useRef(0);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [acting, setActing] = useState(false);
@@ -51,6 +53,9 @@ function SessionDetail({ session, onBack, onSend, onInterrupt, onReply, onReplyF
   const [decisions, setDecisions] = useState<Record<string, string>>({});
   const [workersOpen, setWorkersOpen] = useState(() => session.workers.some(worker => worker.needsYou));
   const [controlsOpen, setControlsOpen] = useState(false);
+  const [showScrollLatest, setShowScrollLatest] = useState(false);
+  const [showCompactHeader, setShowCompactHeader] = useState(false);
+  const [composerHeight, setComposerHeight] = useState(96);
   const controlsId = sessionControlsId(session.serverId ?? session.server, session.remoteId ?? session.id);
   const controlsStore = useRef<SessionControlsStore>({ sessions: {} });
   const controlsRevision = useRef(0);
@@ -107,12 +112,25 @@ function SessionDetail({ session, onBack, onSend, onInterrupt, onReply, onReplyF
   const familyLine = session.familyStatus === 'working'
     ? session.activeWorkerCount ? `${session.activeWorkerCount} worker${session.activeWorkerCount === 1 ? '' : 's'} active` : 'Workers active'
     : undefined;
+  const scrollToLatest = () => { scrollRef.current?.scrollToEnd({ animated: true }); setShowScrollLatest(false); };
+  const onScroll = (event: any) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const y = Math.max(0, contentOffset.y);
+    const nearLatest = y + layoutMeasurement.height >= contentSize.height - 96;
+    setShowScrollLatest(current => current === !nearLatest ? current : !nearLatest);
+    if (y < 32) setShowCompactHeader(false);
+    else if (y < lastScrollY.current - 8) setShowCompactHeader(true);
+    else if (y > lastScrollY.current + 8) setShowCompactHeader(false);
+    lastScrollY.current = y;
+  };
+  const headerActions = <View style={s.headerActions}>{session.freshness !== 'live' ? <Status tone={session.freshness === 'offline' ? 'danger' : 'warning'} label={session.freshness === 'offline' ? 'Offline' : 'Stale'} /> : null}<IconButton testID="session_controls" icon="more" label="Session controls" onPress={() => setControlsOpen(true)} /></View>;
 
-  return <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'web' ? undefined : 'padding'}>
-    <ScrollView style={s.flex} contentContainerStyle={s.page} keyboardShouldPersistTaps="handled">
+  return <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined}>
+    {showCompactHeader ? <View style={s.floatingHeader}><View style={[s.content, s.compactHeader]}><IconButton icon="back" label="Back" onPress={onBack} /><Text numberOfLines={1} style={s.floatingTitle}>{session.title}</Text><View style={s.spacer} /><IconButton icon="more" label="Session controls" onPress={() => setControlsOpen(true)} /></View></View> : null}
+    <ScrollView ref={scrollRef} style={s.flex} contentContainerStyle={s.page} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'} scrollEventThrottle={16} onScroll={onScroll}>
       <View style={s.content}>
         <Header onBack={onBack} eyebrow={`${session.server} / ${session.project}`} title={session.title}
-          right={<View style={s.headerActions}>{session.freshness !== 'live' ? <Status tone={session.freshness === 'offline' ? 'danger' : 'warning'} label={session.freshness === 'offline' ? 'Offline' : 'Stale'} /> : null}<IconButton testID="session_controls" icon="more" label="Session controls" onPress={() => setControlsOpen(true)} /></View>} />
+          right={headerActions} />
 
         <View style={s.now}>
           <View style={s.nowRow}><Status tone={statusTone} label={statusLabel} />{meta ? <Text numberOfLines={1} style={s.faint}>{meta}</Text> : null}<View style={s.spacer} />
@@ -165,7 +183,8 @@ function SessionDetail({ session, onBack, onSend, onInterrupt, onReply, onReplyF
       </View>
     </ScrollView>
 
-    <View style={s.composerBar}>
+    {showScrollLatest ? <View style={[s.scrollLatest, { bottom: composerHeight + space.md }]}><Button label="Latest" icon="down" variant="secondary" size="sm" onPress={scrollToLatest} /></View> : null}
+    <View style={s.composerBar} onLayout={event => { const height = Math.ceil(event.nativeEvent.layout.height); setComposerHeight(current => current === height ? current : height); }}>
       <View style={[s.content, s.composer]}>
         {feedback ? <Text testID={feedback.receipt ? 'message_receipt' : undefined} {...(feedback.tone === 'danger' ? { accessibilityRole: 'alert' as const } : live)} numberOfLines={2}
           style={[s.feedback, { color: feedback.tone === 'success' ? c.success : feedback.tone === 'danger' ? c.danger : c.muted }]}>{feedback.text}</Text> : null}
@@ -344,12 +363,16 @@ const useStyles = makeStyles(c => ({
   workers: { marginTop: space.xl },
   pressed: { opacity: 0.7 },
   disabled: { opacity: 0.4 },
-  composerBar: { borderTopWidth: 1, borderTopColor: c.border, backgroundColor: c.bg, paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.sm },
+  composerBar: { flexShrink: 0, borderTopWidth: 1, borderTopColor: c.border, backgroundColor: c.bg, paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.sm },
   composer: { gap: space.xs },
   feedback: { ...type.caption, marginBottom: 2 },
   composerRow: { flexDirection: 'row', alignItems: 'flex-end', gap: space.sm },
   input: { flex: 1, minHeight: 44, maxHeight: 140, backgroundColor: c.surfaceAlt, borderRadius: 20, paddingHorizontal: space.lg, paddingTop: 12, paddingBottom: 12, color: c.text, fontSize: Platform.OS === 'web' ? 16 : 15, ...(Platform.OS === 'web' ? { outlineStyle: 'none' } as object : {}) },
   round: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
+  scrollLatest: { position: 'absolute', right: space.lg, zIndex: 5 },
+  floatingHeader: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, paddingHorizontal: space.lg, backgroundColor: c.bg, borderBottomWidth: 1, borderBottomColor: c.border },
+  compactHeader: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 56 },
+  floatingTitle: { ...type.small, fontWeight: '600', color: c.text, flexShrink: 1, maxWidth: '68%' },
   rowValue: { ...type.small, color: c.faint, maxWidth: '52%', textAlign: 'right' },
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: { maxHeight: '92%', minHeight: '55%', backgroundColor: c.bg, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, borderWidth: 1, borderBottomWidth: 0, borderColor: c.border, overflow: 'hidden' },
