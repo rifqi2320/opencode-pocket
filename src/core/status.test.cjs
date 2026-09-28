@@ -24,6 +24,11 @@ test("a single missed event stream stays live; the second marks it stale", () =>
   assert.equal(eventStreamIsStale(2), true);
 });
 
+test("cached session data stays live while a refresh is syncing", () => {
+  assert.equal(sessionFreshness({ transport: "live", hasInventory: true, inventoryFreshness: "syncing", activeFreshness: "fresh", messagesLoaded: true, messagesFreshness: "syncing" }), "live");
+  assert.equal(sessionFreshness({ transport: "live", hasInventory: true, inventoryFreshness: "stale", activeFreshness: "fresh" }), "stale");
+});
+
 test("foreground activity stays independent of a historical outcome", () => {
   assert.equal(executionStatus({ active: true, outcome: "error", observedAt: 12, freshness: "fresh" }).value, "running");
   assert.equal(executionStatus({ active: false, outcome: "success" }).value, "inactive");

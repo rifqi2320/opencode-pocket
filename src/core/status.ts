@@ -33,8 +33,11 @@ export type SessionFreshnessEvidence = {
 /** Unrequested message history is not evidence that a connected session is offline. */
 export function sessionFreshness(evidence: SessionFreshnessEvidence): "live" | "stale" | "offline" {
   if (evidence.transport === "offline" || evidence.transport === "auth-error" || !evidence.hasInventory) return "offline";
-  if (evidence.transport !== "live" || evidence.infoFailed || evidence.inventoryFreshness !== "fresh" || evidence.activeFreshness !== "fresh") return "stale";
-  if (evidence.messagesLoaded && evidence.messagesFreshness !== "fresh") return "stale";
+  // Cached data remains trustworthy while its next refresh is in flight. Treat only a failed or
+  // unavailable snapshot as stale; otherwise every routine poll visibly flickers the session.
+  const unavailable = (freshness: Freshness | undefined) => freshness === "stale" || freshness === "offline";
+  if (evidence.transport !== "live" || evidence.infoFailed || unavailable(evidence.inventoryFreshness) || unavailable(evidence.activeFreshness)) return "stale";
+  if (evidence.messagesLoaded && unavailable(evidence.messagesFreshness)) return "stale";
   return "live";
 }
 
