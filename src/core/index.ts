@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { PocketCore } from "./core";
 import { PocketNotifications } from "./notifications";
 import type { NotificationPreferences } from "./notificationLogic";
-import type { ProfileInput, SessionMessage } from "./types";
+import type { ProfileInput, SessionMessage, SessionModelRef } from "./types";
 export * from "./types";
 export * from "./status";
 export { PocketCore } from "./core";
@@ -63,6 +63,8 @@ export function usePocket() {
     createSession: (serverId: string, folder: string, title?: string) => pocketCore.createSession(serverId, folder, title),
     knownDirectories: (serverId: string) => pocketCore.knownDirectories(serverId),
     sendPrompt: (serverId: string, sessionId: string, text: string, delivery?: "steer" | "queue") => pocketCore.sendPrompt(serverId, sessionId, text, delivery),
+    listSessionModels: (serverId: string, sessionId: string) => pocketCore.listSessionModels(serverId, sessionId),
+    switchSessionModel: (serverId: string, sessionId: string, model: SessionModelRef) => pocketCore.switchSessionModel(serverId, sessionId, model),
     interrupt: (serverId: string, sessionId: string) => pocketCore.interrupt(serverId, sessionId),
     replyPermission: (serverId: string, sessionId: string, requestId: string, decision: "once" | "reject") => pocketCore.replyPermission(serverId, sessionId, requestId, decision),
     replyForm: (serverId: string, sessionId: string, formId: string, answers: unknown) => pocketCore.replyForm(serverId, sessionId, formId, answers),

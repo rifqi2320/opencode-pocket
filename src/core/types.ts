@@ -14,6 +14,9 @@ export type SessionMessage = Record<string, unknown> & { id: string; role?: stri
 export type PendingPermission = Record<string, unknown> & { id: string; sessionID: string };
 export type PendingForm = Record<string, unknown> & { id: string; sessionID: string };
 export type PromptDelivery = "steer" | "queue";
+/** A server-advertised model usable for later turns in an existing session. */
+export type SessionModel = { providerID: string; id: string; name: string; variants: Array<{ id: string }> };
+export type SessionModelRef = { providerID: string; id: string; variant?: string };
 export type PromptReceiptState = "sending" | "accepted" | "observed" | "rejected" | "unknown";
 export type PromptReceipt = {
   id: string;

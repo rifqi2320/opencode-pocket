@@ -45,3 +45,13 @@ test("location is sent as the location[directory] deepObject key OpenCode v2 rea
   assert.match(captured[0], /\?location%5Bdirectory%5D=%2Fcode%2Fapi$/);
   assert.equal(new URL(captured[0]).searchParams.has("directory"), false);
 });
+
+test("model switch remains session-scoped and carries no location query", async () => {
+  const captured = [];
+  await fetchApi(async (url, init) => { captured.push({ url: String(url), init }); return { ok: true, status: 204 }; }, base, "/api/session/ses_test/model", {}, undefined, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: { providerID: "openai", id: "gpt-5.6", variant: "fast" } }),
+  });
+  assert.equal(new URL(captured[0].url).pathname, "/prefix/api/session/ses_test/model");
+  assert.equal(new URL(captured[0].url).search, "");
+  assert.deepEqual(JSON.parse(captured[0].init.body), { model: { providerID: "openai", id: "gpt-5.6", variant: "fast" } });
+});

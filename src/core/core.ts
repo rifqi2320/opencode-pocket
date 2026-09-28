@@ -6,9 +6,10 @@ import { secretKey } from "./credentialStore";
 import { deleteCredential, getCredential, setCredential } from "./credentials";
 import { normalizeDirectory, resolveFolderInput } from "./folders";
 import { fetchApi } from "./http";
+import { normalizeModels, sessionModelPayload } from "./modelLogic";
 import { blockerLocationMismatches } from "./status";
 import { reconcileSnapshot } from "./status";
-import type { CoreError, PendingForm, PendingPermission, ProfileInput, PromptDelivery, PromptReceipt, ResourceState, ServerProfile, ServerSnapshot, SessionMessage, SessionRecord, SessionSnapshot } from "./types";
+import type { CoreError, PendingForm, PendingPermission, ProfileInput, PromptDelivery, PromptReceipt, ResourceState, ServerProfile, ServerSnapshot, SessionMessage, SessionModel, SessionModelRef, SessionRecord, SessionSnapshot } from "./types";
 import { CoreError as CoreErrorClass } from "./types";
 
 const PROFILES_KEY = "pocket.profiles.v1";
@@ -265,6 +266,23 @@ export class PocketCore {
       this.patchReceipt(receipt.id, status && status >= 400 && status < 500 ? "rejected" : "unknown");
       throw error;
     }
+  }
+  /** Lists models available at this session's location, including server-defined variants. */
+  async listSessionModels(serverId: string, sessionId: string): Promise<SessionModel[]> {
+    const rt = this.requireRuntime(serverId);
+    const state = this.getSession(serverId, sessionId);
+    const rows = await this.get<unknown[]>(rt, "/api/model", {}, sessionDirectory(state));
+    return normalizeModels(rows);
+  }
+  /** Changes the model for subsequent provider turns; it never replays past work. */
+  async switchSessionModel(serverId: string, sessionId: string, model: SessionModelRef) {
+    const rt = this.requireRuntime(serverId); this.assertWritable(rt);
+    // Like interrupt, this endpoint is identified by session and rejects a location query.
+    await this.post(rt, `/api/session/${enc(sessionId)}/model`, sessionModelPayload(model));
+    this.invalidate(rt, `session:${sessionId}`);
+    // The 204 mutation acknowledgement is authoritative. A follow-up read may fail independently,
+    // so keep the confirmed switch rather than presenting it as a failed write.
+    await this.loadSession(serverId, sessionId).catch(() => undefined);
   }
   async interrupt(serverId: string, sessionId: string) {
     const rt = this.requireRuntime(serverId); this.assertWritable(rt);

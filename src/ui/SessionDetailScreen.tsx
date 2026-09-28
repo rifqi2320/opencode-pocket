@@ -8,6 +8,7 @@ import { FormReplyCard } from './FormReplyCard';
 import { Timeline } from './Timeline';
 import type { FormAnswers } from './forms';
 import type { PocketSession, Worker } from './types';
+import type { SessionModel, SessionModelRef } from '../core/types';
 
 type FormResolution = 'answered' | 'cancelled' | 'pending' | 'unknown';
 type Props = {
@@ -19,6 +20,10 @@ type Props = {
   onOpenWorker: (key: string) => void;
   /** Refreshes this session without leaving its conversation. */
   onRefresh: () => Promise<void>;
+  /** Lists models and variants available at this session's server location. */
+  onListModels: () => Promise<SessionModel[]>;
+  /** Changes the model used by subsequent provider turns. */
+  onSwitchModel: (model: SessionModelRef) => Promise<void>;
   /** Fetches the previous page of messages when the server reports more. */
   onLoadEarlier?: () => Promise<void>;
 };
@@ -37,7 +42,7 @@ export function SessionDetailScreen(props: Props) {
   return <SessionDetail key={`${props.session.server}\u0000${props.session.id}`} {...props} session={props.session} />;
 }
 
-function SessionDetail({ session, onBack, onSend, onInterrupt, onReply, onReplyForm, onOpenWorker, onRefresh, onLoadEarlier }: Props & { session: PocketSession }) {
+function SessionDetail({ session, onBack, onSend, onInterrupt, onReply, onReplyForm, onOpenWorker, onRefresh, onListModels, onSwitchModel, onLoadEarlier }: Props & { session: PocketSession }) {
   const c = usePalette(); const s = useStyles();
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -174,6 +179,7 @@ function SessionDetail({ session, onBack, onSend, onInterrupt, onReply, onReplyF
     </View>
     <SessionControlsSheet visible={controlsOpen} session={session} controls={controls} running={running} acting={acting} onClose={() => setControlsOpen(false)} onUpdate={updateControls}
       onRefresh={() => runAction(async () => { await onRefresh(); setFeedback({ tone: 'muted', text: 'Session refreshed.' }); })}
+      onListModels={onListModels} onSwitchModel={async model => { setActing(true); setFeedback(null); try { await onSwitchModel(model); setFeedback({ tone: 'success', text: `Model switched to ${modelLabel(model)}.` }); } finally { setActing(false); } }}
       onInterrupt={() => { setControlsOpen(false); interrupt(); }} />
   </KeyboardAvoidingView>;
 }
@@ -196,17 +202,36 @@ function WorkerRow({ worker, server, onOpen }: { worker: Worker; server: string;
   return <AccessiblePressable accessibilityRole="button" accessibilityLabel={`Open worker ${worker.title} on ${server}`} onPress={() => onOpen(key)} style={({ pressed }) => [s.row, indent, pressed && s.pressed]}>{content}</AccessiblePressable>;
 }
 
-type ControlsPage = 'home' | 'delivery' | 'details' | 'confirm-stop';
+type ControlsPage = 'home' | 'delivery' | 'model' | 'variant' | 'details' | 'confirm-stop';
 
-function SessionControlsSheet({ visible, session, controls, running, acting, onClose, onUpdate, onRefresh, onInterrupt }: {
+function SessionControlsSheet({ visible, session, controls, running, acting, onClose, onUpdate, onRefresh, onListModels, onSwitchModel, onInterrupt }: {
   visible: boolean; session: PocketSession; controls: SessionControls; running: boolean; acting: boolean; onClose: () => void; onUpdate: (patch: Partial<SessionControls>) => void;
-  onRefresh: () => Promise<void>; onInterrupt: () => void;
+  onRefresh: () => Promise<void>; onListModels: () => Promise<SessionModel[]>; onSwitchModel: (model: SessionModelRef) => Promise<void>; onInterrupt: () => void;
 }) {
   const c = usePalette(); const s = useStyles();
   const [page, setPage] = useState<ControlsPage>('home');
+  const [models, setModels] = useState<SessionModel[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState<string>();
+  const [switchingModel, setSwitchingModel] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<SessionModel>();
+  const listModelsRef = useRef(onListModels);
+  useEffect(() => { listModelsRef.current = onListModels; }, [onListModels]);
   useEffect(() => { if (visible) setPage('home'); }, [visible]);
+  useEffect(() => {
+    if (!visible || page !== 'model') return;
+    let active = true; setModelsLoading(true); setModelsError(undefined);
+    void listModelsRef.current().then(value => { if (active) setModels(value); }).catch(() => { if (active) setModelsError('Could not load models from this server.'); }).finally(() => { if (active) setModelsLoading(false); });
+    return () => { active = false; };
+  }, [visible, page]);
   const back = () => page === 'home' ? onClose() : setPage('home');
-  const title = page === 'home' ? 'Session controls' : page === 'delivery' ? 'Prompt delivery' : page === 'details' ? 'Session details' : 'Stop session';
+  const title = page === 'home' ? 'Session controls' : page === 'delivery' ? 'Prompt delivery' : page === 'model' ? 'Switch model' : page === 'variant' ? 'Choose variant' : page === 'details' ? 'Session details' : 'Stop session';
+  const chooseModel = async (model: SessionModel, variant?: string) => {
+    setSwitchingModel(true); setModelsError(undefined);
+    try { await onSwitchModel({ providerID: model.providerID, id: model.id, ...(variant ? { variant } : {}) }); setPage('home'); }
+    catch { setModelsError('Could not switch the model. Refresh the session and try again.'); }
+    finally { setSwitchingModel(false); }
+  };
   return <Modal visible={visible} transparent animationType="slide" onRequestClose={back}>
     <View style={s.modalOverlay}>
       <View accessibilityViewIsModal style={s.sheet}>
@@ -220,7 +245,7 @@ function SessionControlsSheet({ visible, session, controls, running, acting, onC
             <View style={s.sheetIntro}><Text numberOfLines={1} style={s.body}>{session.title}</Text><Text numberOfLines={1} style={s.faint}>{session.server} · {session.project}</Text></View>
             <SheetSection title="Execution">
               <ControlRow label="Agent" value={session.agent ?? 'Default'} />
-              <ControlRow label="Model" value={session.model ?? 'Default'} />
+              <ControlRow label="Model" value={session.model ?? 'Default'} onPress={() => setPage('model')} />
               <ControlRow label="Prompt delivery" value={deliveryLabel(controls.delivery, running)} onPress={() => setPage('delivery')} />
             </SheetSection>
             <SheetSection title="Display">
@@ -232,13 +257,27 @@ function SessionControlsSheet({ visible, session, controls, running, acting, onC
               <ControlRow label="Session details" onPress={() => setPage('details')} />
             </SheetSection>
             {running ? <SheetSection title="Actions"><ControlRow label="Stop session" danger onPress={() => setPage('confirm-stop')} disabled={acting} /></SheetSection> : null}
-            <Text style={s.sheetNote}>These controls apply only to this Pocket session. Agent and model are shown for reference; changing them is not supported here yet.</Text>
+            <Text style={s.sheetNote}>These controls apply only to this Pocket session. Agent is shown for reference; model changes apply to subsequent provider turns.</Text>
           </> : null}
           {page === 'delivery' ? <>
             <Text style={s.sheetDescription}>Choose how messages from Pocket are delivered to this session.</Text>
             <ChoiceRow label="Automatic" detail="Steer while running; queue when idle." selected={controls.delivery === 'automatic'} onPress={() => { onUpdate({ delivery: 'automatic' }); setPage('home'); }} />
             <ChoiceRow label="Always steer" detail="Send guidance into the active turn." selected={controls.delivery === 'steer'} onPress={() => { onUpdate({ delivery: 'steer' }); setPage('home'); }} />
             <ChoiceRow label="Always queue" detail="Send after the current work is ready." selected={controls.delivery === 'queue'} onPress={() => { onUpdate({ delivery: 'queue' }); setPage('home'); }} />
+          </> : null}
+          {page === 'model' ? <>
+            <Text style={s.sheetDescription}>The selected model is used for subsequent provider turns; existing work is not replayed.</Text>
+            {modelsLoading ? <Text style={s.sheetDescription}>Loading available models…</Text> : null}
+            {modelsError ? <Text accessibilityRole="alert" style={s.danger}>{modelsError}</Text> : null}
+            {!modelsLoading && !modelsError && !models.length ? <Text style={s.sheetDescription}>This server did not report an available model.</Text> : null}
+            {models.map(model => <ChoiceRow key={`${model.providerID}\u0000${model.id}`} label={model.name} detail={`${model.providerID} · ${model.id}${model.variants.length ? ` · ${model.variants.length} variant${model.variants.length === 1 ? '' : 's'}` : ''}`} selected={session.modelRef?.providerID === model.providerID && session.modelRef.id === model.id}
+              disabled={switchingModel} onPress={() => { if (model.variants.length) { setSelectedModel(model); setPage('variant'); } else void chooseModel(model); }} />)}
+          </> : null}
+          {page === 'variant' && selectedModel ? <>
+            <Text style={s.sheetDescription}>Choose a variant for {selectedModel.name}.</Text>
+            {modelsError ? <Text accessibilityRole="alert" style={s.danger}>{modelsError}</Text> : null}
+            <ChoiceRow label="Default" detail="Use this model without a variant." selected={session.modelRef?.providerID === selectedModel.providerID && session.modelRef.id === selectedModel.id && !session.modelRef.variant} disabled={switchingModel} onPress={() => void chooseModel(selectedModel)} />
+            {selectedModel.variants.map(variant => <ChoiceRow key={variant.id} label={variant.id} detail={`${selectedModel.providerID} · ${selectedModel.id}`} selected={session.modelRef?.providerID === selectedModel.providerID && session.modelRef.id === selectedModel.id && session.modelRef.variant === variant.id} disabled={switchingModel} onPress={() => void chooseModel(selectedModel, variant.id)} />)}
           </> : null}
           {page === 'details' ? <SheetSection title="Session"><DetailRow label="Server" value={session.server} /><DetailRow label="Directory" value={session.directory ?? 'Not reported'} /><DetailRow label="Session ID" value={session.remoteId ?? session.id} selectable /><DetailRow label="State" value={`${running ? 'Running' : session.status === 'unknown' ? 'Unknown' : 'Idle'} · ${session.freshness}`} /><DetailRow label="Workers" value={session.activeWorkerCount ? `${session.activeWorkerCount} active` : String(session.workers.length)} /></SheetSection> : null}
           {page === 'confirm-stop' ? <><Text style={s.sheetDescription}>Interrupt this session? Workers may continue and completed changes are not reverted.</Text><View style={s.sheetActions}><Button label="Cancel" variant="secondary" onPress={() => setPage('home')} /><Button label="Stop session" variant="danger" icon="stop" onPress={onInterrupt} /></View></> : null}
@@ -254,7 +293,7 @@ function ControlRow({ label, value, onPress, disabled, danger = false }: { label
   return onPress ? <AccessiblePressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [s.row, disabled && s.disabled, pressed && s.pressed]}>{body}</AccessiblePressable> : <View style={s.row}>{body}</View>;
 }
 function ToggleRow({ label, value, onChange }: { label: string; value: boolean; onChange: (value: boolean) => void }) { const s = useStyles(); return <View style={s.row}><Text style={s.rowTitle}>{label}</Text><View style={s.spacer} /><Toggle label={label} value={value} onValueChange={onChange} /></View>; }
-function ChoiceRow({ label, detail, selected, onPress }: { label: string; detail: string; selected: boolean; onPress: () => void }) { const c = usePalette(); const s = useStyles(); return <AccessiblePressable accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={`${label}. ${detail}`} onPress={onPress} style={({ pressed }) => [s.choice, pressed && s.pressed]}><View style={s.flex}><Text style={s.rowTitle}>{label}</Text><Text style={s.faint}>{detail}</Text></View>{selected ? <Icon name="check" size={18} color={c.success} /> : null}</AccessiblePressable>; }
+function ChoiceRow({ label, detail, selected, onPress, disabled = false }: { label: string; detail: string; selected: boolean; onPress: () => void; disabled?: boolean }) { const c = usePalette(); const s = useStyles(); return <AccessiblePressable accessibilityRole="radio" accessibilityState={{ selected, disabled }} accessibilityLabel={`${label}. ${detail}`} disabled={disabled} onPress={onPress} style={({ pressed }) => [s.choice, disabled && s.disabled, pressed && s.pressed]}><View style={s.flex}><Text style={s.rowTitle}>{label}</Text><Text style={s.faint}>{detail}</Text></View>{selected ? <Icon name="check" size={18} color={c.success} /> : null}</AccessiblePressable>; }
 function DetailRow({ label, value, selectable = false }: { label: string; value: string; selectable?: boolean }) { const s = useStyles(); return <View style={s.detailRow}><Text style={s.detailLabel}>{label}</Text><Text selectable={selectable} style={s.detailValue}>{value}</Text></View>; }
 
 function RoundButton({ icon, label, hint, tone, disabled, busy, onPress, testID }: { icon: IconName; label: string; hint?: string; tone: 'accent' | 'danger'; disabled?: boolean; busy?: boolean; onPress: () => void; testID?: string }) {
@@ -272,6 +311,7 @@ function interruptLabel(result: unknown) {
   return 'Interrupt requested · refreshed state is authoritative';
 }
 function deliveryLabel(delivery: PromptDeliveryPreference, running: boolean) { return delivery === 'automatic' ? `Automatic · ${running ? 'steer' : 'queue'}` : delivery === 'steer' ? 'Always steer' : 'Always queue'; }
+function modelLabel(model: SessionModelRef) { return `${model.providerID}/${model.id}${model.variant ? ` (${model.variant})` : ''}`; }
 function formResolutionText(status: FormResolution) {
   if (status === 'answered') return 'Form answered';
   if (status === 'cancelled') return 'Form was cancelled elsewhere · not replayed';

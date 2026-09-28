@@ -182,6 +182,8 @@ function Shell() {
         onNotificationTest={id => pocket.sendTestNotification(id)} /> : null}
       {route.screen === 'detail' ? <SessionDetailScreen session={selected} onBack={() => setRoute({ screen: 'sessions' })}
         onRefresh={async () => { if (!selected) return; await pocket.refresh(selected.serverId); await pocket.selectSession(selected.serverId, selected.remoteId); }}
+        onListModels={() => { if (!selected) return Promise.resolve([]); return pocket.listSessionModels(selected.serverId, selected.remoteId); }}
+        onSwitchModel={async model => { if (!selected) throw new Error('Session unavailable'); await pocket.switchSessionModel(selected.serverId, selected.remoteId, model); }}
         onSend={async (text, delivery) => { if (!selected) throw new Error('Session unavailable'); return pocket.sendPrompt(selected.serverId, selected.remoteId, text, delivery); }}
         onInterrupt={async () => { if (!selected) throw new Error('Session unavailable'); return pocket.interrupt(selected.serverId, selected.remoteId); }}
         onOpenWorker={openSession}
@@ -263,10 +265,12 @@ function projectSessions(serverSnapshots: ServerSnapshot[], sessionSnapshots: Se
         needsYou: [...permissions, ...forms].some(item => item.sessionID === child.id),
         sessionKey: `${server.profile.id}\u0000${child.id}`,
       }));
-       const myMessages = detail?.messages.data ?? [];
-       const failure = sessionFailure(record, myMessages) ? 'Failure reported in session activity' : undefined;
+      const myMessages = detail?.messages.data ?? [];
+      const failure = sessionFailure(record, myMessages) ? 'Failure reported in session activity' : undefined;
       const freshness = sessionFreshness({ transport: server.transport, hasInventory: server.sessions.data !== undefined, inventoryFreshness: server.sessions.freshness, activeFreshness: server.activeSessionIds.freshness, infoFailed: !!server.info.error, messagesLoaded: detail?.messages.data !== undefined, messagesFreshness: detail?.messages.freshness });
       const messages = buildTurns(myMessages);
+      const displayRecord = detail?.metadata.data ?? record;
+      const model = sessionModel(displayRecord.model);
       const id = `${server.profile.id}\u0000${record.id}`;
       const rolledUpAttention = [...attention];
       const familyPermissionRows = rollupFamilyRows({ records, parentId: record.id, serverId: server.profile.id, rows: permissions }).filter(item => item.ownerSessionId !== record.id);
@@ -284,7 +288,7 @@ function projectSessions(serverSnapshots: ServerSnapshot[], sessionSnapshots: Se
         familyStatus: family.status, activeWorkerCount: family.activeWorkerCount, familyCoverage,
         summary: status === 'running' ? 'Session is active' : status === 'inactive' ? 'No active execution observed' : 'Execution status not confirmed',
         lastSeen: server.activeSessionIds.observedAt ? relative(server.activeSessionIds.observedAt) : 'not observed', freshness, attention, forms: formRequests, rolledUpAttention, workers: workerRows, messages, ...(detail?.messageCursor ? { hasEarlier: true } : {}),
-        ...(typeof record.agent === 'string' ? { agent: record.agent } : {}), ...(typeof record.model === 'string' ? { model: record.model } : {}),
+        ...(typeof displayRecord.agent === 'string' ? { agent: displayRecord.agent } : {}), ...(model ? { model: model.label, modelRef: model.ref } : {}),
         ...(detail?.inbox.data ? { pending: detail.inbox.data.length, pendingItems: detail.inbox.data.map((item, index) => ({ id: typeof item.id === 'string' ? item.id : `pending-${index}`, text: pendingText(item) })) } : {}), coverage: familyCoverage === 'complete' ? 'complete' : 'partial' });
     }
   }
@@ -292,6 +296,14 @@ function projectSessions(serverSnapshots: ServerSnapshot[], sessionSnapshots: Se
 }
 
 function sessionTitle(record: SessionRecord) { return typeof record.title === 'string' && record.title ? record.title : 'Untitled session'; }
+function sessionModel(value: unknown): { label: string; ref: { providerID: string; id: string; variant?: string } } | undefined {
+  if (typeof value === 'string' && value) return { label: value, ref: { providerID: '', id: value } };
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.providerID !== 'string' || typeof raw.id !== 'string') return undefined;
+  const ref = { providerID: raw.providerID, id: raw.id, ...(typeof raw.variant === 'string' && raw.variant ? { variant: raw.variant } : {}) };
+  return { label: `${ref.id}${ref.variant ? ` · ${ref.variant}` : ''}`, ref };
+}
 function directoryName(value?: string) { if (!value) return 'Project not reported'; return value.split('/').filter(Boolean).at(-1) ?? value; }
 function relative(timestamp: number) { const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000)); return seconds < 5 ? 'just now' : seconds < 60 ? `${seconds}s ago` : `${Math.floor(seconds / 60)}m ago`; }
 function uniqueById<T extends { id: string }>(rows: T[]) { return [...new Map(rows.map(row => [row.id, row])).values()]; }

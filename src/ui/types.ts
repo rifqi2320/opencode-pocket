@@ -55,6 +55,8 @@ export type PocketSession = {
   hasEarlier?: boolean;
   agent?: string;
   model?: string;
+  /** Active server model reference, including its optional variant. */
+  modelRef?: { providerID: string; id: string; variant?: string };
   pending?: number;
   pendingItems?: Array<{ id: string; text: string }>;
   coverage?: 'complete' | 'partial' | 'unknown';
