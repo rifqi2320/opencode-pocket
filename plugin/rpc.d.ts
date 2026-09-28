@@ -11,6 +11,8 @@ export interface PocketInfo {
   events?: PocketEventKind[]
   /** Whether devices may opt into subagent outcome pushes (plugin option `subagents`). */
   subagents?: boolean
+  /** Whether the plugin supports waiting for active subagents before a root finished push. */
+  familyCompletion?: boolean
   /** Delivery paths this server supports: `expo` (Expo push token) and/or `fcm` (raw FCM token). Missing before 0.3.0 (FCM only). */
   transports?: Array<'expo' | 'fcm'>
 }
@@ -24,6 +26,8 @@ export interface DevicePreferences {
   sessionInterrupted?: boolean
   /** Also push finished/failed/interrupted for subagent sessions. Optional; defaults to false. */
   includeSubagents?: boolean
+  /** For finished pushes, wait until the root session and its active subagents have settled. Optional; defaults to false. */
+  waitForSubagents?: boolean
   hideDetails: boolean
 }
 

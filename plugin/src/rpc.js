@@ -17,6 +17,8 @@ export const preferencesSchema = {
     // Optional (added in plugin 0.2.0); missing means false.
     sessionInterrupted: { type: 'boolean' },
     includeSubagents: { type: 'boolean' },
+    // Optional: send `finished` only after the root and its active descendants settle.
+    waitForSubagents: { type: 'boolean' },
     hideDetails: { type: 'boolean' },
   },
   required: ['needsPermission', 'needsAnswer', 'sessionFailed', 'sessionFinished', 'hideDetails'],
@@ -37,6 +39,8 @@ export const pocketRpc = {
           // Kinds this server pushes (plugin option `events`) and whether subagent outcomes are allowed.
           events: { type: 'array', items: { type: 'string' } },
           subagents: { type: 'boolean' },
+          // Whether this plugin supports holding a root completion for active subagents.
+          familyCompletion: { type: 'boolean' },
           // Delivery paths this server supports (0.3.0+): 'expo' (Expo push token) and/or 'fcm' (raw FCM token).
           transports: { type: 'array', items: { type: 'string' } },
         },

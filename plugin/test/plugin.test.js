@@ -52,7 +52,7 @@ test('zero config: Expo push works without credentials; raw FCM tokens have no t
     const { ctx, rpc } = fakeCtx()
     const cleanup = await plugin.setup(ctx)
     const h = rpc.registered.handlers
-    assert.deepEqual(await h.info(undefined), { protocolVersion: 1, pluginVersion: PLUGIN_VERSION, notificationsConfigured: true, events: ['permission', 'question', 'failed', 'finished', 'interrupted'], subagents: true, transports: ['expo'] })
+    assert.deepEqual(await h.info(undefined), { protocolVersion: 1, pluginVersion: PLUGIN_VERSION, notificationsConfigured: true, events: ['permission', 'question', 'failed', 'finished', 'interrupted'], subagents: true, familyCompletion: true, transports: ['expo'] })
     const prefs = { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, hideDetails: false }
     await h.upsertDevice({ deviceId: 'expo', fcmToken: 'ExponentPushToken[abc123]', platform: 'android', pairingId: 'p1', preferences: prefs })
     assert.deepEqual(await h.testNotification({ deviceId: 'expo' }), { ok: true })

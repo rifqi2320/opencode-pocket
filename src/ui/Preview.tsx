@@ -12,8 +12,8 @@ const servers: PocketServer[] = [
   { id: 'lab', name: 'Lab box', url: 'https://lab.example.com', state: 'offline', error: 'Could not reach server' },
 ];
 const notificationFixture: { platform: string; servers: Record<string, PocketServerNotifications> } = { platform: 'android', servers: {
-  ws: { enabled: true, busy: false, status: { kind: 'on', label: 'On', tone: 'success', canToggle: true }, preferences: { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, sessionInterrupted: false, includeSubagents: false, hideDetails: false } },
-  lab: { enabled: false, busy: false, status: { kind: 'plugin-missing', label: 'Plugin not installed · see plugin/README.md', tone: 'neutral', canToggle: false }, preferences: { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, sessionInterrupted: false, includeSubagents: false, hideDetails: false } },
+  ws: { enabled: true, busy: false, status: { kind: 'on', label: 'On', tone: 'success', canToggle: true }, preferences: { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, sessionInterrupted: false, includeSubagents: false, waitForSubagents: false, hideDetails: false } },
+  lab: { enabled: false, busy: false, status: { kind: 'plugin-missing', label: 'Plugin not installed · see plugin/README.md', tone: 'neutral', canToggle: false }, preferences: { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, sessionInterrupted: false, includeSubagents: false, waitForSubagents: false, hideDetails: false } },
 } };
 /**
  * Sanitized fixture in the real OpenCode v2 wire shape (GET /api/session/:id/message): one

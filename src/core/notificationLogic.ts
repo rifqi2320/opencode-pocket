@@ -5,16 +5,16 @@ export const POCKET_PROTOCOL_VERSION = 1;
 export const CHANNEL_ATTENTION = "pocket-attention";
 export const CHANNEL_UPDATES = "pocket-updates";
 
-export type NotificationPreferences = { needsPermission: boolean; needsAnswer: boolean; sessionFailed: boolean; sessionFinished: boolean; sessionInterrupted: boolean; includeSubagents: boolean; hideDetails: boolean };
+export type NotificationPreferences = { needsPermission: boolean; needsAnswer: boolean; sessionFailed: boolean; sessionFinished: boolean; sessionInterrupted: boolean; includeSubagents: boolean; waitForSubagents: boolean; hideDetails: boolean };
 export type NotificationPrefKey = keyof NotificationPreferences;
-export const DEFAULT_PREFERENCES: NotificationPreferences = { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, sessionInterrupted: false, includeSubagents: false, hideDetails: false };
+export const DEFAULT_PREFERENCES: NotificationPreferences = { needsPermission: true, needsAnswer: true, sessionFailed: true, sessionFinished: false, sessionInterrupted: false, includeSubagents: false, waitForSubagents: false, hideDetails: false };
 /** Display order. `sessionInterrupted` and `includeSubagents` need plugin 0.2.0+. */
-export const PREFERENCE_KEYS: readonly NotificationPrefKey[] = ["needsPermission", "needsAnswer", "sessionFailed", "sessionFinished", "sessionInterrupted", "includeSubagents", "hideDetails"];
+export const PREFERENCE_KEYS: readonly NotificationPrefKey[] = ["needsPermission", "needsAnswer", "sessionFailed", "sessionFinished", "sessionInterrupted", "includeSubagents", "waitForSubagents", "hideDetails"];
 /** Persisted per server profile. `enabled` stays false until the user turns notifications on. */
 export type ServerNotificationRecord = { pairingId: string; enabled: boolean; preferences: NotificationPreferences };
 export type NotificationStore = { deviceId?: string; servers: Record<string, ServerNotificationRecord> };
 /** `events`/`subagents` come from plugin 0.2.0+ (its server options); older plugins omit them. */
-export type PocketInfo = { protocolVersion: number; pluginVersion?: string; notificationsConfigured: boolean; events?: string[]; subagents?: boolean; transports?: string[] };
+export type PocketInfo = { protocolVersion: number; pluginVersion?: string; notificationsConfigured: boolean; events?: string[]; subagents?: boolean; familyCompletion?: boolean; transports?: string[] };
 /** How this device's token reaches it: through the Expo Push Service, or direct FCM with the server's own Firebase key. */
 export type PushTransport = "expo" | "fcm";
 /** Plugin 0.3.0+ advertises `transports`; Expo is preferred because it needs no credentials on the server. Older plugins are FCM only. */
@@ -53,6 +53,7 @@ export function availablePreferences(info?: PocketInfo): NotificationPrefKey[] {
   const kinds = new Set(info.events.map(kind => PREFERENCE_FOR_EVENT[kind]).filter((key): key is NotificationPrefKey => !!key));
   const outcomes = kinds.has("sessionFailed") || kinds.has("sessionFinished") || kinds.has("sessionInterrupted");
   if (info.subagents !== false && outcomes) kinds.add("includeSubagents");
+  if (info.familyCompletion === true && info.subagents !== false && kinds.has("sessionFinished")) kinds.add("waitForSubagents");
   kinds.add("hideDetails");
   return PREFERENCE_KEYS.filter(key => kinds.has(key));
 }
@@ -77,7 +78,7 @@ export function parsePocketInfo(value: unknown): PocketInfo | undefined {
   const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : undefined;
   const events = strings(info.events); const transports = strings(info.transports);
   return { protocolVersion, ...(typeof info.pluginVersion === "string" ? { pluginVersion: info.pluginVersion } : {}), notificationsConfigured: info.notificationsConfigured === true,
-    ...(events ? { events } : {}), ...(typeof info.subagents === "boolean" ? { subagents: info.subagents } : {}), ...(transports ? { transports } : {}) };
+    ...(events ? { events } : {}), ...(typeof info.subagents === "boolean" ? { subagents: info.subagents } : {}), ...(typeof info.familyCompletion === "boolean" ? { familyCompletion: info.familyCompletion } : {}), ...(transports ? { transports } : {}) };
 }
 export function parseTestResult(value: unknown): { ok: boolean; error?: string } {
   if (!value || typeof value !== "object") return { ok: false, error: "Unexpected response from the plugin" };

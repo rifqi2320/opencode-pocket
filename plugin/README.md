@@ -101,7 +101,7 @@ All calls are `POST {base}/api/rpc/pocket/{method}` and use the same auth as the
 
 | Method | Input | Output |
 |---|---|---|
-| `info` | anything | `{ protocolVersion: 1, pluginVersion, notificationsConfigured, events, subagents, transports }` (`events`/`subagents` since 0.2.0, `transports: ('expo'\|'fcm')[]` since 0.3.0) |
+| `info` | anything | `{ protocolVersion: 1, pluginVersion, notificationsConfigured, events, subagents, familyCompletion, transports }` (`events`/`subagents` since 0.2.0, `familyCompletion` advertises the wait-for-subagents preference, `transports: ('expo'\|'fcm')[]` since 0.3.0) |
 | `upsertDevice` | `{ deviceId, fcmToken, platform: 'android'\|'ios', pairingId, preferences }`. `fcmToken` holds either an Expo push token (`ExponentPushToken[…]`) or a raw FCM token; the field name is kept for compatibility. | `{ ok: true }` |
 | `removeDevice` | `{ deviceId }` | `{ ok: true }` (also when unknown) |
 | `testNotification` | `{ deviceId }` | `{ ok: true }` or `{ ok: false, error }` |
@@ -117,9 +117,10 @@ Each device registration has independent preferences, chosen on the phone. The s
 | `needsPermission` | A new permission request is asked (`permission.asked`) in any session, subagents included |
 | `needsAnswer` | A new question/form is created (`form.created`) |
 | `sessionFailed` | A session's execution fails (`session.execution.failed`). Subagents only with `includeSubagents`. |
-| `sessionFinished` | A session goes from running to idle/succeeded, and the plugin saw it start. Off by default in the app. Never sent for interruptions, runs shorter than `minRunSeconds`, or runs that started before the plugin loaded. Subagents only with `includeSubagents`. |
+| `sessionFinished` | A session goes from running to idle/succeeded, and the plugin saw it start. Off by default in the app. Never sent for interruptions, runs shorter than `minRunSeconds`, or runs that started before the plugin loaded. Subagents only with `includeSubagents`; `waitForSubagents` instead sends the root completion after its active children settle. |
 | `sessionInterrupted` | A run is interrupted (`session.execution.interrupted`). Optional, default `false`. Subagents only with `includeSubagents`. |
 | `includeSubagents` | Also send the three outcome kinds above for subagent sessions (requires the server option `subagents`). Optional, default `false`. Permission requests and questions always notify, subagents included. |
+| `waitForSubagents` | For `sessionFinished`, suppress child completion pushes and wait until the root session is idle and all tracked subagents have settled. Optional, default `false`. |
 | `hideDetails` | Show a generic title (`OpenCode needs you` / `Session update`) and body, with no project name, session title, command or error text. The routing `data` doesn't change. |
 
 Requests answered before the push goes out are skipped. Every condition is deduplicated by request, form or event id, and the dedupe records are kept in plugin storage (bounded to 500, 7-day retention). If a token turns out to be invalid (Expo `DeviceNotRegistered`, immediately or in a receipt; FCM `UNREGISTERED`, HTTP 404, or `INVALID_ARGUMENT` about the registration token), the device is removed automatically. Transient errors (rate limits, 5xx, network) get one retry.

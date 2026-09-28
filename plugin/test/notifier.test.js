@@ -26,7 +26,7 @@ const permissionAsked = (id, sessionID = 'ses_1', extra = {}) => ({ id: `evt_${i
 const formCreated = (id, sessionID = 'ses_1') => ({ id: `evt_${id}`, type: 'form.created', data: { form: { id, sessionID, title: 'Which database should I use?', fields: [] } } })
 
 test('info reports protocol and configuration', () => {
-  assert.deepEqual(setup().notifier.info(), { protocolVersion: 1, pluginVersion: '0.1.0', notificationsConfigured: true, events: ['permission', 'question', 'failed', 'finished', 'interrupted'], subagents: true, transports: [] })
+  assert.deepEqual(setup().notifier.info(), { protocolVersion: 1, pluginVersion: '0.1.0', notificationsConfigured: true, events: ['permission', 'question', 'failed', 'finished', 'interrupted'], subagents: true, familyCompletion: true, transports: [] })
   assert.deepEqual(setup({ config: { events: ['permission'], allowSubagents: false } }).notifier.info().events, ['permission'])
   const unconfigured = createNotifier({ storage: memoryStorage(), sender: null, pluginVersion: '0.1.0', projectName: 'x' })
   assert.equal(unconfigured.info().notificationsConfigured, false)
@@ -300,6 +300,30 @@ test('subagent outcomes reach only devices that opted in', async () => {
   await notifier.idle()
   assert.deepEqual(sender.sent.map((m) => [m.token, m.data.kind]), [['tok-sub', 'failed'], ['tok-sub', 'finished']])
   assert.match(sender.sent[0].notification.title, /subagent failed/)
+})
+
+test('waitForSubagents sends one root completion after active subagents settle', async () => {
+  const { notifier, sender } = setup({ sessions: { root: { title: 'Main agent' }, child: { title: 'Worker', parentID: 'root' } } })
+  await notifier.upsertDevice(device('family', { sessionFinished: true, includeSubagents: true, waitForSubagents: true }))
+  await notifier.upsertDevice(device('normal', { sessionFinished: true, includeSubagents: true }))
+
+  notifier.onEvent({ id: 'r-start', type: 'session.execution.started', data: { sessionID: 'root' } })
+  notifier.onEvent({ id: 'c-start', type: 'session.execution.started', data: { sessionID: 'child' } })
+  notifier.onEvent({ id: 'r-finish', type: 'session.execution.succeeded', data: { sessionID: 'root' } })
+  await notifier.idle()
+  // The normal preference sees the root immediately. Family mode holds it
+  // because the child is still active.
+  assert.deepEqual(sender.sent.map((m) => [m.token, m.data.sessionId]), [['tok-normal', 'root']])
+
+  notifier.onEvent({ id: 'c-finish', type: 'session.execution.succeeded', data: { sessionID: 'child' } })
+  await notifier.idle()
+  assert.deepEqual(sender.sent.map((m) => [m.token, m.data.sessionId]), [
+    ['tok-normal', 'root'],
+    ['tok-normal', 'child'],
+    ['tok-family', 'root'],
+  ])
+  assert.equal(sender.sent[2].notification.title, 'my-app: session finished')
+  assert.equal(sender.sent[2].notification.body, 'Main agent')
 })
 
 test('server options: events allowlist, subagents off, minRunSeconds, forced hideDetails', async () => {

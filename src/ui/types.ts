@@ -69,7 +69,7 @@ export type PocketServer = {
   error?: string;
 };
 /** Per-server push notification controls (see src/core/notifications.ts). */
-export type NotificationPrefKey = 'needsPermission' | 'needsAnswer' | 'sessionFailed' | 'sessionFinished' | 'sessionInterrupted' | 'includeSubagents' | 'hideDetails';
+export type NotificationPrefKey = 'needsPermission' | 'needsAnswer' | 'sessionFailed' | 'sessionFinished' | 'sessionInterrupted' | 'includeSubagents' | 'waitForSubagents' | 'hideDetails';
 export type PocketServerNotifications = {
   enabled: boolean;
   busy: boolean;

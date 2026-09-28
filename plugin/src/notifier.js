@@ -8,9 +8,9 @@ export const EVENT_KINDS = KINDS.filter((kind) => kind !== 'test')
 const PREFERENCE_FOR = { permission: 'needsPermission', question: 'needsAnswer', failed: 'sessionFailed', finished: 'sessionFinished', interrupted: 'sessionInterrupted' }
 /** Session-outcome kinds that follow the root/subagent policy (requests always notify, subagents included). */
 const OUTCOME = new Set(['failed', 'finished', 'interrupted'])
-export const PREFERENCE_KEYS = ['needsPermission', 'needsAnswer', 'sessionFailed', 'sessionFinished', 'sessionInterrupted', 'includeSubagents', 'hideDetails']
+export const PREFERENCE_KEYS = ['needsPermission', 'needsAnswer', 'sessionFailed', 'sessionFinished', 'sessionInterrupted', 'includeSubagents', 'waitForSubagents', 'hideDetails']
 /** Added after protocol 1 shipped; older apps omit them, so they default to false. */
-const OPTIONAL_PREFERENCES = new Set(['sessionInterrupted', 'includeSubagents'])
+const OPTIONAL_PREFERENCES = new Set(['sessionInterrupted', 'includeSubagents', 'waitForSubagents'])
 const ATTENTION = new Set(['permission', 'question'])
 export const CHANNEL_ATTENTION = 'pocket-attention'
 export const CHANNEL_UPDATES = 'pocket-updates'
@@ -135,6 +135,10 @@ export function createNotifier(deps) {
   const running = new Map() // sessionId -> start time, for sessions observed active since this process started
   const resolved = new Set() // permission/form ids resolved before a push went out
   const sessions = new Map() // sessionId -> { title?, parentID?, known: boolean, at }
+  // Root finished events held until its active descendant sessions settle. These are
+  // intentionally in-memory like the regular event queue: a plugin restart errs on
+  // the side of not delivering a stale completion push.
+  const pendingFamilyFinishes = new Map() // root sessionId -> finished job
   const sentMemory = new Set()
   const throttle = new Map()
   let working
@@ -226,7 +230,7 @@ export function createNotifier(deps) {
   }
 
   function info() {
-    return { protocolVersion: PROTOCOL_VERSION, pluginVersion, notificationsConfigured: !!sender, events: [...cfg.events], subagents: cfg.allowSubagents, transports: [...transports] }
+    return { protocolVersion: PROTOCOL_VERSION, pluginVersion, notificationsConfigured: !!sender, events: [...cfg.events], subagents: cfg.allowSubagents, familyCompletion: true, transports: [...transports] }
   }
 
   // ---------- event intake (cheap, synchronous) ----------
@@ -334,6 +338,7 @@ export function createNotifier(deps) {
       while (queue.length && !stopped) {
         const job = queue.shift()
         await safe(`process ${job.kind}`, () => process(job))
+        if (OUTCOME.has(job.kind)) await safe('flush deferred family finish', flushPendingFamilyFinishes)
       }
     })().finally(() => {
       working = undefined
@@ -350,6 +355,29 @@ export function createNotifier(deps) {
     const next = { title: info.title, parentID: info.parentID, known: true, at: now() }
     sessions.set(sessionId, next)
     return next
+  }
+
+  /** Finds a session's top-level parent. Missing metadata conservatively treats it as a root. */
+  async function rootSessionId(sessionId, initial) {
+    let id = sessionId
+    let session = initial ?? await resolveSession(id)
+    const seen = new Set()
+    while (session?.parentID && !seen.has(id)) {
+      seen.add(id)
+      id = session.parentID
+      session = await resolveSession(id)
+    }
+    return id
+  }
+
+  /** True while the root itself or any known descendant is still running. */
+  async function familyIsRunning(rootId) {
+    if (running.has(rootId)) return true
+    for (const sessionId of running.keys()) {
+      if (sessionId === rootId) continue
+      if (await rootSessionId(sessionId) === rootId) return true
+    }
+    return false
   }
 
   async function alreadySent(key) {
@@ -369,21 +397,7 @@ export function createNotifier(deps) {
     if (++sentWrites % 50 === 0) await compact()
   }
 
-  async function process(job) {
-    if (!sender) return
-    if (!cfg.events.includes(job.kind)) return
-    if (resolved.has(job.eventId)) return
-    if (await alreadySent(job.dedupeKey)) return
-    const session = await resolveSession(job.sessionId)
-    // Outcome policy: subagent outcomes go only to devices that opted in (and only if the server allows it).
-    // Finished pushes also need the session to be known, so an unresolved lookup never looks like a root.
-    const subagent = !!session?.parentID
-    if (OUTCOME.has(job.kind) && subagent && !cfg.allowSubagents) return
-    if (job.kind === 'finished' && !session?.known) return
-    const devices = (await safe('list devices', listDevices, [])).filter((d) =>
-      d.preferences?.[PREFERENCE_FOR[job.kind]] === true && !(OUTCOME.has(job.kind) && subagent && d.preferences?.includeSubagents !== true))
-    await markSent(job.dedupeKey) // mark first: losing a push is preferable to duplicates
-    if (resolved.has(job.eventId)) return
+  async function sendToDevices(devices, job, session, subagent) {
     for (const device of devices) {
       if (stopped) return
       const tKey = `${device.deviceId}|${job.sessionId}|${job.kind}`
@@ -399,11 +413,76 @@ export function createNotifier(deps) {
         projectName,
         sessionTitle: session?.title,
         detail: job.detail,
-        subagent: OUTCOME.has(job.kind) && subagent,
+        subagent,
         forceHideDetails: cfg.forceHideDetails,
       })
       await safe('deliver', () => deliver(device, message))
     }
+  }
+
+  async function finishedDevices(job, session, { waitForFamily = false } = {}) {
+    const subagent = !!session?.parentID
+    const devices = (await safe('list devices', listDevices, [])).filter((d) =>
+      d.preferences?.sessionFinished === true
+      && !(subagent && d.preferences?.includeSubagents !== true)
+      && (!waitForFamily || d.preferences?.waitForSubagents === true))
+    return { devices, subagent }
+  }
+
+  /** Sends root completion pushes that were held while its child sessions were still active. */
+  async function flushPendingFamilyFinishes() {
+    for (const [rootId, job] of pendingFamilyFinishes) {
+      if (await familyIsRunning(rootId)) continue
+      pendingFamilyFinishes.delete(rootId)
+      const session = await resolveSession(rootId)
+      if (!session?.known) continue
+      const { devices } = await finishedDevices(job, session, { waitForFamily: true })
+      await sendToDevices(devices, job, session, false)
+    }
+  }
+
+  async function processFinished(job, session) {
+    // Keep the existing safe default: never emit a completion when we cannot
+    // identify the session (and therefore cannot establish its parentage).
+    if (!session?.known) return
+    const { devices, subagent } = await finishedDevices(job, session)
+    const waitDevices = !subagent ? devices.filter((d) => d.preferences?.waitForSubagents === true) : []
+    // The family mode never emits a child completion, even if this device also
+    // opted into normal subagent outcome notifications.
+    const immediateDevices = devices.filter((d) => d.preferences?.waitForSubagents !== true)
+
+    await markSent(job.dedupeKey) // mark first: losing a push is preferable to duplicates
+    if (immediateDevices.length) await sendToDevices(immediateDevices, job, session, subagent)
+
+    // A child completion is never itself a family-complete notification. For a
+    // root completion, hold the notification until all observed descendants have
+    // left the running set; the next outcome event flushes the held root event.
+    if (!waitDevices.length) return
+    const rootId = await rootSessionId(job.sessionId, session)
+    if (rootId !== job.sessionId) return
+    if (await familyIsRunning(rootId)) {
+      pendingFamilyFinishes.set(rootId, job)
+      return
+    }
+    await sendToDevices(waitDevices, job, session, false)
+  }
+
+  async function process(job) {
+    if (!sender) return
+    if (!cfg.events.includes(job.kind)) return
+    if (resolved.has(job.eventId)) return
+    if (await alreadySent(job.dedupeKey)) return
+    const session = await resolveSession(job.sessionId)
+    // Outcome policy: subagent outcomes go only to devices that opted in (and only if the server allows it).
+    // Finished pushes also need the session to be known, so an unresolved lookup never looks like a root.
+    const subagent = !!session?.parentID
+    if (OUTCOME.has(job.kind) && subagent && !cfg.allowSubagents) return
+    if (job.kind === 'finished') return processFinished(job, session)
+    const devices = (await safe('list devices', listDevices, [])).filter((d) =>
+      d.preferences?.[PREFERENCE_FOR[job.kind]] === true && !(OUTCOME.has(job.kind) && subagent && d.preferences?.includeSubagents !== true))
+    await markSent(job.dedupeKey) // mark first: losing a push is preferable to duplicates
+    if (resolved.has(job.eventId)) return
+    await sendToDevices(devices, job, session, OUTCOME.has(job.kind) && subagent)
   }
 
   /** Removes devices whose push token the transport later reported as unregistered (Expo delivery receipts). */

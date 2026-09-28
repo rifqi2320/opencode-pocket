@@ -164,7 +164,7 @@ export function ServersScreen({ servers, onBack, onSave, onUpdate, onRemove, onT
   </ScrollView>;
 }
 
-const PREFS: ReadonlyArray<readonly [NotificationPrefKey, string]> = [['needsPermission', 'Permission requests'], ['needsAnswer', 'Questions'], ['sessionFailed', 'Failures'], ['sessionFinished', 'Finished sessions'], ['sessionInterrupted', 'Interrupted sessions'], ['includeSubagents', 'Include subagents (finished, failed, interrupted)'], ['hideDetails', 'Hide details on lock screen']];
+const PREFS: ReadonlyArray<readonly [NotificationPrefKey, string]> = [['needsPermission', 'Permission requests'], ['needsAnswer', 'Questions'], ['sessionFailed', 'Failures'], ['sessionFinished', 'Finished sessions'], ['sessionInterrupted', 'Interrupted sessions'], ['includeSubagents', 'Include subagents (finished, failed, interrupted)'], ['waitForSubagents', 'Wait for main agent and subagents (finished)'], ['hideDetails', 'Hide details on lock screen']];
 
 function NotificationsBlock({ serverId, platform, value, onToggle, onPreference, onTest }: { serverId: string; platform: string; value?: PocketServerNotifications; onToggle?: Props['onNotificationsToggle']; onPreference?: Props['onNotificationPreference']; onTest?: Props['onNotificationTest'] }) {
   const c = usePalette(); const s = useStyles();
