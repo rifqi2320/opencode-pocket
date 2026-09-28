@@ -16,7 +16,13 @@ require.extensions[".ts"] = (module, filename) => {
   module._compile(output, filename);
 };
 
-const { blockerLocationMismatches, classifyRelationship, executionStatus, familyActivity, rollupFamilyRows, sessionDescendants, sessionFreshness, reconcileSnapshot } = require(path.join(__dirname, "status.ts"));
+const { blockerLocationMismatches, classifyRelationship, eventStreamIsStale, executionStatus, familyActivity, rollupFamilyRows, sessionDescendants, sessionFreshness, reconcileSnapshot } = require(path.join(__dirname, "status.ts"));
+
+test("a single missed event stream stays live; the second marks it stale", () => {
+  assert.equal(eventStreamIsStale(0), false);
+  assert.equal(eventStreamIsStale(1), false);
+  assert.equal(eventStreamIsStale(2), true);
+});
 
 test("foreground activity stays independent of a historical outcome", () => {
   assert.equal(executionStatus({ active: true, outcome: "error", observedAt: 12, freshness: "fresh" }).value, "running");

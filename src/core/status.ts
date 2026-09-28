@@ -1,5 +1,9 @@
 import type { Freshness, Observed } from "./types";
 
+/** A single reconnect is routine on mobile networks; require another missed stream before warning. */
+export const MISSED_EVENT_STREAMS_BEFORE_STALE = 2;
+export function eventStreamIsStale(missedStreams: number) { return missedStreams >= MISSED_EVENT_STREAMS_BEFORE_STALE; }
+
 export type ExecutionEvidence = {
   active: boolean | undefined;
   outcome?: "success" | "error" | "interrupted";

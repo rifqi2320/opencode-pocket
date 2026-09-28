@@ -7,7 +7,7 @@ import { deleteCredential, getCredential, setCredential } from "./credentials";
 import { normalizeDirectory, resolveFolderInput } from "./folders";
 import { fetchApi } from "./http";
 import { normalizeModels, sessionModelPayload } from "./modelLogic";
-import { blockerLocationMismatches } from "./status";
+import { blockerLocationMismatches, eventStreamIsStale } from "./status";
 import { reconcileSnapshot } from "./status";
 import type { CoreError, PendingForm, PendingPermission, ProfileInput, PromptDelivery, PromptReceipt, ResourceState, ServerProfile, ServerSnapshot, SessionMessage, SessionModel, SessionModelRef, SessionRecord, SessionSnapshot } from "./types";
 import { CoreError as CoreErrorClass } from "./types";
@@ -311,7 +311,11 @@ export class PocketCore {
   private async startEvents(rt: Runtime) {
     let attempt = 0;
     while (this.runtimes.get(rt.profile.id) === rt) {
-      rt.snapshot.transport = attempt ? "reconnecting" : "connecting"; this.emit();
+      // A single dropped event stream is normal on mobile networks. Preserve live evidence while
+      // its first reconnect is underway; report stale only after a second missed stream.
+      const streamStale = eventStreamIsStale(attempt);
+      const transport = rt.snapshot.info.data && !streamStale ? "live" : attempt ? "reconnecting" : "connecting";
+      if (rt.snapshot.transport !== transport) { rt.snapshot.transport = transport; this.emit(); }
       try {
         const iterable = (rt.client as any).event.subscribe();
         for await (const event of iterable) {
@@ -324,7 +328,9 @@ export class PocketCore {
       }
       if (this.runtimes.get(rt.profile.id) !== rt) return;
       if (rt.authRejected) return;
-      rt.snapshot.transport = "reconnecting"; this.markStale(rt); this.emit(); void this.refresh(rt.profile.id).catch(() => undefined);
+      const missedStreams = attempt + 1;
+      if (eventStreamIsStale(missedStreams)) { rt.snapshot.transport = "reconnecting"; this.markStale(rt); this.emit(); }
+      void this.refresh(rt.profile.id).catch(() => undefined);
       await new Promise(resolve => setTimeout(resolve, reconnectDelay(attempt++)));
     }
   }

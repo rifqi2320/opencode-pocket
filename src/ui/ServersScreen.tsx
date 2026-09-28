@@ -139,7 +139,7 @@ export function ServersScreen({ servers, onBack, onSave, onUpdate, onRemove, onT
           {open ? <View style={s.detail}>
             {server.error ? <Notice tone="danger">{server.error}</Notice> : null}
             <View style={s.facts}>
-              {([['Version', server.version], ['Transport', server.transport], ['Last sync', server.lastSync], ['Coverage', server.coverage]] as const).map(([key, value]) =>
+              {([['Version', server.version], ['Transport', server.transport], ['Latest activity', server.lastSync], ['Coverage', server.coverage]] as const).map(([key, value]) =>
                 <View key={key} style={s.fact}><Text style={s.factKey}>{key}</Text><Text numberOfLines={1} style={s.factValue}>{value || '—'}</Text></View>)}
             </View>
             {notifications && notifications.platform !== 'web' ? <NotificationsBlock serverId={server.id} platform={notifications.platform} value={notifications.servers[server.id]}
