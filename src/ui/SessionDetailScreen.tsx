@@ -125,7 +125,9 @@ function SessionDetail({ session, onBack, onSend, onInterrupt, onReply, onReplyF
   };
   const headerActions = <View style={s.headerActions}>{session.freshness !== 'live' ? <Status tone={session.freshness === 'offline' ? 'danger' : 'warning'} label={session.freshness === 'offline' ? 'Offline' : 'Stale'} /> : null}<IconButton testID="session_controls" icon="more" label="Session controls" onPress={() => setControlsOpen(true)} /></View>;
 
-  return <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined}>
+  // Some Android IMEs report an inset that ends above their accessory strip. Keep the entire
+  // composer, including its send button, clear of that strip rather than letting it be clipped.
+  return <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined} keyboardVerticalOffset={Platform.OS === 'android' ? 80 : 0}>
     {showCompactHeader ? <View style={s.floatingHeader}><View style={[s.content, s.compactHeader]}><IconButton icon="back" label="Back" onPress={onBack} /><Text numberOfLines={1} style={s.floatingTitle}>{session.title}</Text><View style={s.spacer} /><IconButton icon="more" label="Session controls" onPress={() => setControlsOpen(true)} /></View></View> : null}
     <ScrollView ref={scrollRef} style={s.flex} contentContainerStyle={s.page} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'} scrollEventThrottle={16} onScroll={onScroll}>
       <View style={s.content}>
